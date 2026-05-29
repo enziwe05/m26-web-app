@@ -1,0 +1,106 @@
+﻿<?php
+if (!isset($_COOKIE['user_role']) || $_COOKIE['user_role'] != 'admin') {
+    echo "Unauthorised access! <a href='login.php'>Login</a>";
+    exit;
+}
+
+include_once 'incl/dbconn.php';
+
+$total_sites     = $conn->query("SELECT COUNT(*) AS n FROM sites")->fetch_assoc()['n'];
+$total_employees = $conn->query("SELECT COUNT(*) AS n FROM users WHERE role = 'employee' AND status = 'active'")->fetch_assoc()['n'];
+$in_progress     = $conn->query("SELECT COUNT(*) AS n FROM visits WHERE status = 'in_progress'")->fetch_assoc()['n'];
+$today           = $conn->query("SELECT COUNT(*) AS n FROM visits WHERE scheduled_date = CURDATE()")->fetch_assoc()['n'];
+
+$recent = $conn->query("
+    SELECT v.visit_id, s.site_code, s.site_name, v.visit_type, v.status,
+           v.scheduled_date, u.first_name, u.last_name
+    FROM visits v
+    JOIN sites s ON s.site_id = v.site_id
+    JOIN users u ON u.user_id = v.assigned_to_user_id
+    ORDER BY v.created_at DESC
+    LIMIT 10
+");
+?>
+<!DOCTYPE html>
+<html lang='en'>
+<head>
+    <meta charset='UTF-8'>
+    <meta name='viewport' content='width=device-width, initial-scale=1.0'>
+    <title>M26 | Dashboard</title>
+    <link rel='icon' href='images/m26.png' type='image/png'>
+    <link rel='stylesheet' href='css/styles.css?v=8'/>
+</head>
+<body>
+<div class='page-wrapper'>
+    <?php include_once 'incl/sidebar.php'; ?>
+    <div class='main-content'>
+
+        <div class='page-heading'>
+            <h1>Dashboard</h1>
+            <span>Welcome, <?php echo htmlspecialchars($_COOKIE['user_name']); ?></span>
+        </div>
+
+        <div class='stat-row'>
+            <div class='stat-box'>
+                <div class='stat-label'>Total Sites</div>
+                <div class='stat-value'><?php echo $total_sites; ?></div>
+            </div>
+            <div class='stat-box'>
+                <div class='stat-label'>Active Staff</div>
+                <div class='stat-value'><?php echo $total_employees; ?></div>
+            </div>
+            <div class='stat-box'>
+                <div class='stat-label'>In Progress</div>
+                <div class='stat-value'><?php echo $in_progress; ?></div>
+            </div>
+            <div class='stat-box'>
+                <div class='stat-label'>Scheduled Today</div>
+                <div class='stat-value'><?php echo $today; ?></div>
+            </div>
+        </div>
+
+        <div class='page-heading'>
+            <h2>Recent Visits</h2>
+            <a href='create_visit.php' class='btn btn-primary'>+ Create Visit</a>
+        </div>
+
+        <?php
+        if ($recent->num_rows == 0) {
+            echo "<p>No visits yet. <a href='create_visit.php'>Create the first one.</a></p>";
+        } else {
+            echo "<div class='table-scroll'>";
+            echo "<table class='data-table'>";
+            echo "<tr><th>Site</th><th>Type</th><th>Tech</th><th>Scheduled</th><th>Status</th><th></th></tr>";
+            while ($row = $recent->fetch_assoc()) {
+                $badge = $row['status'] == 'in_progress' ? 'in-progress' : $row['status'];
+                $label = str_replace('_', ' ', $row['status']);
+                echo "<tr>";
+                echo "<td>" . htmlspecialchars($row['site_name']) . "</td>";
+                echo "<td>" . htmlspecialchars($row['visit_type']) . "</td>";
+                echo "<td>" . htmlspecialchars($row['first_name'] . ' ' . $row['last_name']) . "</td>";
+                echo "<td>" . $row['scheduled_date'] . "</td>";
+                echo "<td><span class='badge badge-$badge'>$label</span></td>";
+                echo "<td><a href='visit_detail.php?visit_id=" . $row['visit_id'] . "'>View</a></td>";
+                echo "</tr>";
+            }
+            echo "</table>";
+            echo "</div>";
+        }
+        ?>
+
+        <br>
+        <h2>Quick Links</h2>
+        <p>
+            <a href='view_sites.php' class='btn btn-secondary'>View Sites</a>
+            &nbsp;
+            <a href='view_visits.php' class='btn btn-secondary'>All Visits</a>
+            &nbsp;
+            <a href='view_employees.php' class='btn btn-secondary'>Employees</a>
+            &nbsp;
+            <a href='add_site.php' class='btn btn-secondary'>Add Site</a>
+        </p>
+
+    </div>
+</div>
+</body>
+</html>

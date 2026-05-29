@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost/m26/employee_dashboard.php)",
+      "PowerShell(Start-Process \"msedge\" \"--user-data-dir=C:\\\\Users\\\\dlami\\\\AppData\\\\Local\\\\Temp\\\\edge_ss_profile --headless --screenshot=C:\\\\Users\\\\dlami\\\\Desktop\\\\resp_desktop.png --window-size=1400,900 http://localhost/m26/test_dash.php\")",
+      "PowerShell(Start-Process \"msedge\" \"--user-data-dir=C:\\\\Users\\\\dlami\\\\AppData\\\\Local\\\\Temp\\\\edge_ss_profile --headless --screenshot=C:\\\\Users\\\\dlami\\\\Desktop\\\\resp_mobile.png --window-size=390,844 http://localhost/m26/employee_dashboard.php\")",
+      "PowerShell(\"done\")",
+      "PowerShell(Start-Process \"msedge\" \"--user-data-dir=C:\\\\Users\\\\dlami\\\\AppData\\\\Local\\\\Temp\\\\edge_ss_profile --headless --screenshot=C:\\\\Users\\\\dlami\\\\Desktop\\\\resp_mobile2.png --window-size=390,844 http://localhost/m26/employee_dashboard.php\")",
+      "PowerShell(Start-Process \"msedge\" \"--user-data-dir=C:\\\\Users\\\\dlami\\\\AppData\\\\Local\\\\Temp\\\\edge_ss_profile --headless --screenshot=C:\\\\Users\\\\dlami\\\\Desktop\\\\resp_desktop2.png --window-size=1400,900 http://localhost/m26/admin_dashboard.php\")",
+      "Bash(rm -f C:/Users/dlami/Desktop/emp_dash.png C:/Users/dlami/Desktop/emp_dash2.png C:/Users/dlami/Desktop/emp_dash3.png C:/Users/dlami/Desktop/resp_desktop.png C:/Users/dlami/Desktop/resp_desktop2.png C:/Users/dlami/Desktop/resp_mobile.png C:/Users/dlami/Desktop/resp_mobile2.png && echo \"cleaned\")",
+      "PowerShell(& \"C:\\\\MAMP\\\\bin\\\\mysql\\\\bin\\\\mysql.exe\" -u root -proot 2>&1)"
+    ],
+    "additionalDirectories": [
+      "C:\\Users\\dlami\\Desktop"
+    ]
+  }
+}
