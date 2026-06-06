@@ -1,61 +1,65 @@
-﻿<?php
-if (!isset($_COOKIE['user_role']) || $_COOKIE['user_role'] != 'admin') {
-    echo "Unauthorised access! <a href='login.php'>Login</a>";
-    exit;
-}
-
-include_once 'incl/dbconn.php';
+<?php
+require_once 'incl/dbconn.php';
+require_admin();
 
 $message = "";
+$regions = ['Hhohho', 'Lubombo', 'Manzini', 'Shiselweni'];
+
+// Suggest the next site code in the existing M### format (e.g. M342)
+$next_code = '';
+$res = $conn->query("SELECT MAX(CAST(SUBSTRING(site_code, 2) AS UNSIGNED)) AS n FROM sites WHERE site_code REGEXP '^M[0-9]+$'");
+if ($res && ($row = $res->fetch_assoc())) {
+    $next_code = 'M' . str_pad((int)$row['n'] + 1, 3, '0', STR_PAD_LEFT);
+}
 
 if (isset($_POST['site_code'])) {
-    $site_code  = trim($_POST['site_code']);
-    $site_name  = trim($_POST['site_name']);
-    $location   = trim($_POST['location']);
-    $latitude   = trim($_POST['latitude']);
-    $longitude  = trim($_POST['longitude']);
-    $notes      = trim($_POST['notes']);
+    csrf_check();
+    $site_code  = trim($_POST['site_code'] ?? '');
+    $site_name  = trim($_POST['site_name'] ?? '');
+    $region     = trim($_POST['region'] ?? '');
+    $location   = trim($_POST['location'] ?? '');
+    $latitude   = trim($_POST['latitude'] ?? '');
+    $longitude  = trim($_POST['longitude'] ?? '');
+    $notes      = trim($_POST['notes'] ?? '');
 
-    if ($site_name == '') {
-        $message = "Site name is required.";
+    // Required fields — a site isn't valid without these
+    if ($site_code == '' || $site_name == '' || !in_array($region, $regions)) {
+        $message = "Site code, site name and region are required.";
     } else {
-        if ($site_code == '') {
-            $site_code = 'SITE-' . strtoupper(substr(md5(uniqid()), 0, 6));
-        }
         $lat = $latitude  != '' ? $latitude  : null;
         $lng = $longitude != '' ? $longitude : null;
 
         $stmt = $conn->prepare("
-            INSERT INTO sites (site_code, site_name, location, latitude, longitude, notes)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO sites (site_code, site_name, location, latitude, longitude, notes, region)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
         ");
-        $stmt->bind_param('sssdds', $site_code, $site_name, $location, $lat, $lng, $notes);
+        $stmt->bind_param('sssddss', $site_code, $site_name, $location, $lat, $lng, $notes, $region);
 
-        if ($stmt->execute()) {
+        try {
+            $stmt->execute();
             $new_id = $stmt->insert_id;
             $stmt->close();
             header('Location: site_detail.php?site_id=' . $new_id);
             exit;
-        } else {
-            $message = "Error adding site. Site code may already exist.";
+        } catch (mysqli_sql_exception $e) {
             $stmt->close();
+            $message = "Error adding site — that site code already exists.";
         }
     }
 }
+
+// Re-fill values after a validation error, otherwise sensible defaults
+$v_code   = isset($_POST['site_code']) ? htmlspecialchars($_POST['site_code']) : htmlspecialchars($next_code);
+$v_name   = isset($_POST['site_name']) ? htmlspecialchars($_POST['site_name']) : '';
+$v_region = $_POST['region']    ?? '';
+$v_loc    = isset($_POST['location'])  ? htmlspecialchars($_POST['location'])  : '';
+$v_lat    = isset($_POST['latitude'])  ? htmlspecialchars($_POST['latitude'])  : '';
+$v_lng    = isset($_POST['longitude']) ? htmlspecialchars($_POST['longitude']) : '';
+$v_notes  = isset($_POST['notes'])     ? htmlspecialchars($_POST['notes'])     : '';
+
+$page_title = 'M26 | Add Site';
+include 'incl/header.php';
 ?>
-<!DOCTYPE html>
-<html lang='en'>
-<head>
-    <meta charset='UTF-8'>
-    <meta name='viewport' content='width=device-width, initial-scale=1.0'>
-    <title>M26 | Add Site</title>
-    <link rel='icon' href='images/m26.png' type='image/png'>
-    <link rel='stylesheet' href='css/styles.css?v=8'/>
-</head>
-<body>
-<div class='page-wrapper'>
-    <?php include_once 'incl/sidebar.php'; ?>
-    <div class='main-content'>
 
         <div class='page-heading'>
             <h1>Add Site</h1>
@@ -67,40 +71,47 @@ if (isset($_POST['site_code'])) {
 
         <div class='card'>
         <form method='POST' action='add_site.php'>
+            <?php echo csrf_field(); ?>
 
             <div class='form-group'>
-                <label>Site Code</label>
-                <input type='text' name='site_code' placeholder='e.g. WN012'
-                       value='<?php echo isset($_POST['site_code']) ? htmlspecialchars($_POST['site_code']) : ""; ?>'>
+                <label>Site Code *</label>
+                <input type='text' name='site_code' placeholder='e.g. M342' value='<?php echo $v_code; ?>'>
+                <small style='color:#888; display:block; margin-top:4px;'>Format: M followed by a number (e.g. M342). Must be unique.</small>
             </div>
 
             <div class='form-group'>
                 <label>Site Name *</label>
-                <input type='text' name='site_name' placeholder='e.g. Asoc'
-                       value='<?php echo isset($_POST['site_name']) ? htmlspecialchars($_POST['site_name']) : ""; ?>'>
+                <input type='text' name='site_name' placeholder='e.g. Mbabane Exchange' value='<?php echo $v_name; ?>'>
             </div>
 
             <div class='form-group'>
-                <label>Location</label>
-                <input type='text' name='location' placeholder='e.g. Mbabane, Eswatini'
-                       value='<?php echo isset($_POST['location']) ? htmlspecialchars($_POST['location']) : ""; ?>'>
+                <label>Region *</label>
+                <select name='region'>
+                    <option value=''>-- Select Region --</option>
+                    <?php foreach ($regions as $r): ?>
+                        <option value='<?php echo $r; ?>'<?php echo $v_region === $r ? ' selected' : ''; ?>><?php echo $r; ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+
+            <div class='form-group'>
+                <label>Location / Coverage</label>
+                <input type='text' name='location' placeholder='e.g. Mbabane CBD, Msunduza' value='<?php echo $v_loc; ?>'>
             </div>
 
             <div class='form-group'>
                 <label>Latitude</label>
-                <input type='text' name='latitude' placeholder='e.g. -26.314000'
-                       value='<?php echo isset($_POST['latitude']) ? htmlspecialchars($_POST['latitude']) : ""; ?>'>
+                <input type='text' name='latitude' placeholder='e.g. -26.314000' value='<?php echo $v_lat; ?>'>
             </div>
 
             <div class='form-group'>
                 <label>Longitude</label>
-                <input type='text' name='longitude' placeholder='e.g. 31.139000'
-                       value='<?php echo isset($_POST['longitude']) ? htmlspecialchars($_POST['longitude']) : ""; ?>'>
+                <input type='text' name='longitude' placeholder='e.g. 31.139000' value='<?php echo $v_lng; ?>'>
             </div>
 
             <div class='form-group'>
                 <label>Notes</label>
-                <textarea name='notes' rows='3'><?php echo isset($_POST['notes']) ? htmlspecialchars($_POST['notes']) : ""; ?></textarea>
+                <textarea name='notes' rows='3' placeholder='e.g. site owner / access details'><?php echo $v_notes; ?></textarea>
             </div>
 
             <input type='submit' value='Add Site' class='btn btn-primary'>
@@ -110,7 +121,4 @@ if (isset($_POST['site_code'])) {
         </form>
         </div>
 
-    </div>
-</div>
-</body>
-</html>
+<?php include 'incl/footer.php'; ?>

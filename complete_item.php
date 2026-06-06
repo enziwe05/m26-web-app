@@ -1,10 +1,6 @@
-﻿<?php
-if (!isset($_COOKIE['user_role']) || $_COOKIE['user_role'] != 'employee') {
-    echo "Unauthorised access! <a href='login.php'>Login</a>";
-    exit;
-}
-
-include_once 'incl/dbconn.php';
+<?php
+require_once 'incl/dbconn.php';
+require_employee();
 
 if (!isset($_GET['item_id']) || !isset($_GET['visit_id'])) {
     header('Location: employee_dashboard.php');
@@ -13,7 +9,7 @@ if (!isset($_GET['item_id']) || !isset($_GET['visit_id'])) {
 
 $item_id  = (int)$_GET['item_id'];
 $visit_id = (int)$_GET['visit_id'];
-$user_id  = (int)$_COOKIE['user_id'];
+$user_id  = current_user_id();
 
 // Confirm this item belongs to a visit assigned to this tech
 $stmt = $conn->prepare("
@@ -40,6 +36,7 @@ if ($item['is_done']) {
 $message = "";
 
 if (isset($_POST['mark_done'])) {
+    csrf_check();
     $errors  = array();
     $allowed = array('jpg', 'jpeg', 'png', 'gif');
     $max_size = 10 * 1024 * 1024;
@@ -47,7 +44,7 @@ if (isset($_POST['mark_done'])) {
     $before_filename = '';
     $after_filename  = '';
 
-    // Handle before photo (optional during dev â€” remove the check to enforce later)
+    // Handle before photo (optional during dev - remove the check to enforce later)
     if (isset($_FILES['before_photo']) && $_FILES['before_photo']['error'] == 0) {
         $file = $_FILES['before_photo'];
         $ext  = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
@@ -119,20 +116,9 @@ if (isset($_POST['mark_done'])) {
         exit;
     }
 }
+$page_title = 'M26 | Complete Item';
+include 'incl/header.php';
 ?>
-<!DOCTYPE html>
-<html lang='en'>
-<head>
-    <meta charset='UTF-8'>
-    <meta name='viewport' content='width=device-width, initial-scale=1.0'>
-    <title>M26 | Complete Item</title>
-    <link rel='icon' href='images/m26.png' type='image/png'>
-    <link rel='stylesheet' href='css/styles.css?v=8'/>
-</head>
-<body>
-<div class='page-wrapper'>
-    <?php include_once 'incl/sidebar.php'; ?>
-    <div class='main-content'>
 
         <div class='page-heading'>
             <h1>Complete Item</h1>
@@ -148,6 +134,7 @@ if (isset($_POST['mark_done'])) {
 
         <div class='card'>
         <form method='POST' action='complete_item.php?item_id=<?php echo $item_id; ?>&visit_id=<?php echo $visit_id; ?>' enctype='multipart/form-data'>
+            <?php echo csrf_field(); ?>
 
             <div class='file-upload-group'>
                 <div class='file-upload-box'>
@@ -164,7 +151,7 @@ if (isset($_POST['mark_done'])) {
 
             <br>
             <p style='font-size:13px; color:#666;'>
-                Recorded automatically: <?php echo htmlspecialchars($_COOKIE['user_name']); ?> &mdash; <?php echo date('d M Y, H:i'); ?>
+                Recorded automatically: <?php echo htmlspecialchars(current_user_name()); ?> &mdash; <?php echo date('d M Y, H:i'); ?>
             </p>
 
             <input type='submit' name='mark_done' value='Mark Item Done' class='btn btn-primary'>
@@ -174,7 +161,4 @@ if (isset($_POST['mark_done'])) {
         </form>
         </div>
 
-    </div>
-</div>
-</body>
-</html>
+<?php include 'incl/footer.php'; ?>

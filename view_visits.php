@@ -1,10 +1,6 @@
-﻿<?php
-if (!isset($_COOKIE['user_role']) || $_COOKIE['user_role'] != 'admin') {
-    echo "Unauthorised access! <a href='login.php'>Login</a>";
-    exit;
-}
-
-include_once 'incl/dbconn.php';
+<?php
+require_once 'incl/dbconn.php';
+require_staff();
 
 $filter_status = isset($_GET['status']) ? $_GET['status'] : '';
 $filter_tech   = isset($_GET['tech_id']) ? (int)$_GET['tech_id'] : 0;
@@ -29,6 +25,24 @@ if ($filter_tech > 0) {
 
 $where_clause = count($where) > 0 ? 'WHERE ' . implode(' AND ', $where) : '';
 
+// ── Pagination ────────────────────────────────────────────────────────────────
+$per_page = 25;
+$page     = max(1, (int)($_GET['page'] ?? 1));
+
+$count_sql = "SELECT COUNT(*) AS n FROM visits v $where_clause";
+if ($params) {
+    $cstmt = $conn->prepare($count_sql);
+    $cstmt->bind_param($types, ...$params);
+    $cstmt->execute();
+    $total = (int) $cstmt->get_result()->fetch_assoc()['n'];
+    $cstmt->close();
+} else {
+    $total = (int) $conn->query($count_sql)->fetch_assoc()['n'];
+}
+$total_pages = max(1, (int) ceil($total / $per_page));
+$page        = min($page, $total_pages);
+$offset      = ($page - 1) * $per_page;
+
 $sql = "
     SELECT v.visit_id, s.site_code, s.site_name, v.visit_type, v.status,
            v.scheduled_date, v.completed_at,
@@ -40,31 +54,25 @@ $sql = "
     JOIN users u ON u.user_id = v.assigned_to_user_id
     $where_clause
     ORDER BY v.scheduled_date DESC
+    LIMIT ? OFFSET ?
 ";
+$page_params = array_merge($params, [$per_page, $offset]);
+$stmt = $conn->prepare($sql);
+$stmt->bind_param($types . 'ii', ...$page_params);
+$stmt->execute();
+$result = $stmt->get_result();
+$stmt->close();
 
-if (count($params) > 0) {
-    $stmt = $conn->prepare($sql);
-    $stmt->bind_param($types, ...$params);
-    $stmt->execute();
-    $result = $stmt->get_result();
-    $stmt->close();
-} else {
-    $result = $conn->query($sql);
+// Page link preserving current filters
+function visits_page_link(int $n, string $status, int $tech): string {
+    $q = array_filter(['status' => $status, 'tech_id' => $tech ?: '', 'page' => $n],
+                      fn($v) => $v !== '' && $v !== null);
+    return 'view_visits.php?' . http_build_query($q);
 }
+
+$page_title = 'M26 | All Visits';
+include 'incl/header.php';
 ?>
-<!DOCTYPE html>
-<html lang='en'>
-<head>
-    <meta charset='UTF-8'>
-    <meta name='viewport' content='width=device-width, initial-scale=1.0'>
-    <title>M26 | All Visits</title>
-    <link rel='icon' href='images/m26.png' type='image/png'>
-    <link rel='stylesheet' href='css/styles.css?v=8'/>
-</head>
-<body>
-<div class='page-wrapper'>
-    <?php include_once 'incl/sidebar.php'; ?>
-    <div class='main-content'>
 
         <div class='page-heading'>
             <h1>All Visits</h1>
@@ -95,6 +103,7 @@ if (count($params) > 0) {
         if ($result->num_rows == 0) {
             echo "<p>No visits found.</p>";
         } else {
+            echo "<p style='font-size:13px; color:#888; margin-bottom:10px;'>Showing " . ($offset + 1) . "–" . ($offset + $result->num_rows) . " of $total visits</p>";
             echo "<div class='table-scroll'>";
             echo "<table class='data-table'>";
             echo "<tr><th>Site</th><th>Type</th><th>Tech</th><th>Scheduled</th><th>Progress</th><th>Status</th><th></th></tr>";
@@ -106,7 +115,7 @@ if (count($params) > 0) {
                 echo "<td>" . htmlspecialchars($row['site_name']) . "</td>";
                 echo "<td>" . htmlspecialchars($row['visit_type']) . "</td>";
                 echo "<td>" . htmlspecialchars($row['first_name'] . ' ' . $row['last_name']) . "</td>";
-                echo "<td>" . $row['scheduled_date'] . "</td>";
+                echo "<td>" . fmt_date($row['scheduled_date']) . "</td>";
                 echo "<td>" . $progress . "</td>";
                 echo "<td><span class='badge badge-$badge'>$label</span></td>";
                 echo "<td><a href='visit_detail.php?visit_id=" . $row['visit_id'] . "'>View</a></td>";
@@ -117,7 +126,16 @@ if (count($params) > 0) {
         }
         ?>
 
-    </div>
-</div>
-</body>
-</html>
+        <?php if ($total_pages > 1): ?>
+        <div class='pager'>
+            <?php if ($page > 1): ?>
+                <a class='btn btn-secondary' href='<?php echo htmlspecialchars(visits_page_link($page - 1, $filter_status, $filter_tech)); ?>'>&larr; Prev</a>
+            <?php endif; ?>
+            <span class='pager-info'>Page <?php echo $page; ?> of <?php echo $total_pages; ?></span>
+            <?php if ($page < $total_pages): ?>
+                <a class='btn btn-secondary' href='<?php echo htmlspecialchars(visits_page_link($page + 1, $filter_status, $filter_tech)); ?>'>Next &rarr;</a>
+            <?php endif; ?>
+        </div>
+        <?php endif; ?>
+
+<?php include 'incl/footer.php'; ?>

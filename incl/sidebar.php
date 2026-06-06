@@ -5,21 +5,33 @@
     </div>
 
     <ul class='sidebar-links'>
-        <?php if (isset($_COOKIE['user_role']) && $_COOKIE['user_role'] == 'admin'): ?>
-            <li><a href='admin_dashboard.php'>Dashboard</a></li>
-            <li><a href='view_sites.php'>Sites</a></li>
-            <li><a href='view_visits.php'>All Visits</a></li>
-            <li><a href='view_employees.php'>Employees</a></li>
-        <?php elseif (isset($_COOKIE['user_role']) && $_COOKIE['user_role'] == 'employee'): ?>
-            <li><a href='employee_dashboard.php'>My Visits</a></li>
-        <?php else: ?>
-            <li><a href='login.php'>Login</a></li>
-        <?php endif; ?>
+        <?php
+        $role = current_user_role();
+        $here = basename($_SERVER['PHP_SELF'] ?? '');
+
+        // Helper: mark a link active when it points at the current page
+        $nav = function (string $file, string $label) use ($here) {
+            $active = ($here === $file) ? " class='active'" : '';
+            echo "<li><a href='{$file}'{$active}>{$label}</a></li>";
+        };
+
+        if ($role === 'admin' || $role === 'supervisor') {
+            $nav('admin_dashboard.php', 'Dashboard');
+            $nav('view_sites.php',      'Sites');
+            $nav('view_visits.php',     'All Visits');
+            $nav('faults.php',          'Faults');
+            $nav('view_employees.php',  'Employees');
+        } elseif ($role === 'employee') {
+            $nav('employee_dashboard.php', 'My Visits');
+        } else {
+            $nav('login.php', 'Login');
+        }
+        ?>
     </ul>
 
-    <?php if (isset($_COOKIE['user_name'])): ?>
+    <?php if (current_user_name() !== ''): ?>
     <div class='sidebar-footer'>
-        <span class='sidebar-user'><?php echo htmlspecialchars($_COOKIE['user_name']); ?></span>
+        <span class='sidebar-user'><?php echo htmlspecialchars(current_user_name()); ?></span>
         <a href='logout.php' class='logout-link'>Logout</a>
     </div>
     <?php endif; ?>

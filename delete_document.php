@@ -1,10 +1,6 @@
 <?php
-if (!isset($_COOKIE['user_role']) || $_COOKIE['user_role'] != 'admin') {
-    echo "Unauthorised access! <a href='login.php'>Login</a>";
-    exit;
-}
-
-include_once 'incl/dbconn.php';
+require_once 'incl/dbconn.php';
+require_staff();
 
 if (!isset($_GET['document_id']) || !isset($_GET['site_id'])) {
     header('Location: view_sites.php');

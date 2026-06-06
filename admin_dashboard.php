@@ -1,10 +1,6 @@
-﻿<?php
-if (!isset($_COOKIE['user_role']) || $_COOKIE['user_role'] != 'admin') {
-    echo "Unauthorised access! <a href='login.php'>Login</a>";
-    exit;
-}
-
-include_once 'incl/dbconn.php';
+<?php
+require_once 'incl/dbconn.php';
+require_staff();
 
 $total_sites     = $conn->query("SELECT COUNT(*) AS n FROM sites")->fetch_assoc()['n'];
 $total_employees = $conn->query("SELECT COUNT(*) AS n FROM users WHERE role = 'employee' AND status = 'active'")->fetch_assoc()['n'];
@@ -20,24 +16,13 @@ $recent = $conn->query("
     ORDER BY v.created_at DESC
     LIMIT 10
 ");
+$page_title = 'M26 | Dashboard';
+include 'incl/header.php';
 ?>
-<!DOCTYPE html>
-<html lang='en'>
-<head>
-    <meta charset='UTF-8'>
-    <meta name='viewport' content='width=device-width, initial-scale=1.0'>
-    <title>M26 | Dashboard</title>
-    <link rel='icon' href='images/m26.png' type='image/png'>
-    <link rel='stylesheet' href='css/styles.css?v=8'/>
-</head>
-<body>
-<div class='page-wrapper'>
-    <?php include_once 'incl/sidebar.php'; ?>
-    <div class='main-content'>
 
         <div class='page-heading'>
             <h1>Dashboard</h1>
-            <span>Welcome, <?php echo htmlspecialchars($_COOKIE['user_name']); ?></span>
+            <span>Welcome, <?php echo htmlspecialchars(current_user_name()); ?></span>
         </div>
 
         <div class='stat-row'>
@@ -78,7 +63,7 @@ $recent = $conn->query("
                 echo "<td>" . htmlspecialchars($row['site_name']) . "</td>";
                 echo "<td>" . htmlspecialchars($row['visit_type']) . "</td>";
                 echo "<td>" . htmlspecialchars($row['first_name'] . ' ' . $row['last_name']) . "</td>";
-                echo "<td>" . $row['scheduled_date'] . "</td>";
+                echo "<td>" . fmt_date($row['scheduled_date']) . "</td>";
                 echo "<td><span class='badge badge-$badge'>$label</span></td>";
                 echo "<td><a href='visit_detail.php?visit_id=" . $row['visit_id'] . "'>View</a></td>";
                 echo "</tr>";
@@ -100,7 +85,4 @@ $recent = $conn->query("
             <a href='add_site.php' class='btn btn-secondary'>Add Site</a>
         </p>
 
-    </div>
-</div>
-</body>
-</html>
+<?php include 'incl/footer.php'; ?>

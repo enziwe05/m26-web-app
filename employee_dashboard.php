@@ -1,12 +1,8 @@
-﻿<?php
-if (!isset($_COOKIE['user_role']) || $_COOKIE['user_role'] != 'employee') {
-    echo "Unauthorised access! <a href='login.php'>Login</a>";
-    exit;
-}
+<?php
+require_once 'incl/dbconn.php';
+require_employee();
 
-include_once 'incl/dbconn.php';
-
-$user_id = $_COOKIE['user_id'];
+$user_id = current_user_id();
 
 $stmt = $conn->prepare("
     SELECT v.visit_id, s.site_code, s.site_name, v.visit_type, v.status, v.scheduled_date,
@@ -42,7 +38,7 @@ function render_table(array $rows): void {
         echo "<tr>";
         echo "<td>" . htmlspecialchars($row['site_name']) . "</td>";
         echo "<td>" . htmlspecialchars($row['visit_type']) . "</td>";
-        echo "<td>" . $row['scheduled_date'] . "</td>";
+        echo "<td>" . fmt_date($row['scheduled_date']) . "</td>";
         echo "<td>" . $progress . "</td>";
         echo "<td><span class='badge badge-$badge'>$label</span></td>";
         echo "<td><a href='employee_visit.php?visit_id=" . $row['visit_id'] . "'>Open</a></td>";
@@ -50,24 +46,13 @@ function render_table(array $rows): void {
     }
     echo "</table>";
 }
+$page_title = 'M26 | My Visits';
+include 'incl/header.php';
 ?>
-<!DOCTYPE html>
-<html lang='en'>
-<head>
-    <meta charset='UTF-8'>
-    <meta name='viewport' content='width=device-width, initial-scale=1.0'>
-    <title>M26 | My Visits</title>
-    <link rel='icon' href='images/m26.png' type='image/png'>
-    <link rel='stylesheet' href='css/styles.css?v=8'/>
-</head>
-<body>
-<div class='page-wrapper'>
-    <?php include_once 'incl/sidebar.php'; ?>
-    <div class='main-content'>
 
         <div class='page-heading'>
             <h1>My Visits</h1>
-            <span>Hi, <?php echo htmlspecialchars($_COOKIE['user_name']); ?></span>
+            <span>Hi, <?php echo htmlspecialchars(current_user_name()); ?></span>
         </div>
 
         <?php if (empty($active) && empty($completed)): ?>
@@ -90,7 +75,4 @@ function render_table(array $rows): void {
 
         <?php endif; ?>
 
-    </div>
-</div>
-</body>
-</html>
+<?php include 'incl/footer.php'; ?>

@@ -1,10 +1,6 @@
-﻿<?php
-if (!isset($_COOKIE['user_role']) || $_COOKIE['user_role'] != 'admin') {
-    echo "Unauthorised access! <a href='login.php'>Login</a>";
-    exit;
-}
-
-include_once 'incl/dbconn.php';
+<?php
+require_once 'incl/dbconn.php';
+require_staff();
 
 if (!isset($_GET['site_id'])) {
     header('Location: view_sites.php');
@@ -27,8 +23,9 @@ if (!$site) {
 $message = "";
 
 if (isset($_POST['doc_name'])) {
+    csrf_check();
     $doc_name  = trim($_POST['doc_name']);
-    $uploaded_by = $_COOKIE['user_id'];
+    $uploaded_by = current_user_id();
 
     if ($doc_name == '') {
         $message = "Document name is required.";
@@ -65,20 +62,9 @@ if (isset($_POST['doc_name'])) {
         }
     }
 }
+$page_title = 'M26 | Upload Document';
+include 'incl/header.php';
 ?>
-<!DOCTYPE html>
-<html lang='en'>
-<head>
-    <meta charset='UTF-8'>
-    <meta name='viewport' content='width=device-width, initial-scale=1.0'>
-    <title>M26 | Upload Document</title>
-    <link rel='icon' href='images/m26.png' type='image/png'>
-    <link rel='stylesheet' href='css/styles.css?v=8'/>
-</head>
-<body>
-<div class='page-wrapper'>
-    <?php include_once 'incl/sidebar.php'; ?>
-    <div class='main-content'>
 
         <div class='page-heading'>
             <h1>Upload Document</h1>
@@ -91,6 +77,7 @@ if (isset($_POST['doc_name'])) {
 
         <div class='card'>
         <form method='POST' action='upload_document.php?site_id=<?php echo $site_id; ?>' enctype='multipart/form-data'>
+            <?php echo csrf_field(); ?>
 
             <div class='form-group'>
                 <label>Document Name *</label>
@@ -99,7 +86,7 @@ if (isset($_POST['doc_name'])) {
             </div>
 
             <div class='form-group'>
-                <label>File * (PDF, JPG, PNG â€” max 10 MB)</label>
+                <label>File * (PDF, JPG, PNG - max 10 MB)</label>
                 <input type='file' name='doc_file' accept='.pdf,.jpg,.jpeg,.png,.gif'>
             </div>
 
@@ -110,7 +97,4 @@ if (isset($_POST['doc_name'])) {
         </form>
         </div>
 
-    </div>
-</div>
-</body>
-</html>
+<?php include 'incl/footer.php'; ?>

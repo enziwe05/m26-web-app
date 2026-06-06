@@ -1,10 +1,6 @@
-﻿<?php
-if (!isset($_COOKIE['user_role']) || $_COOKIE['user_role'] != 'admin') {
-    echo "Unauthorised access! <a href='login.php'>Login</a>";
-    exit;
-}
-
-include_once 'incl/dbconn.php';
+<?php
+require_once 'incl/dbconn.php';
+require_staff();
 
 if (!isset($_GET['site_id'])) {
     header('Location: view_sites.php');
@@ -53,20 +49,22 @@ $stmt->bind_param('i', $site_id);
 $stmt->execute();
 $documents = $stmt->get_result();
 $stmt->close();
+
+// Antenna / cell configuration (reference data from the LTE export)
+$stmt = $conn->prepare("
+    SELECT cell_name, sector, azimuth, mech_tilt, e_tilt, antenna_height, tower_height, frequency_band, cell_status
+    FROM site_cells
+    WHERE site_id = ?
+    ORDER BY CAST(sector AS UNSIGNED), frequency_band
+");
+$stmt->bind_param('i', $site_id);
+$stmt->execute();
+$cells = $stmt->get_result();
+$stmt->close();
+
+$page_title = 'M26 | ' . $site['site_code'];
+include 'incl/header.php';
 ?>
-<!DOCTYPE html>
-<html lang='en'>
-<head>
-    <meta charset='UTF-8'>
-    <meta name='viewport' content='width=device-width, initial-scale=1.0'>
-    <title>M26 | <?php echo htmlspecialchars($site['site_code']); ?></title>
-    <link rel='icon' href='images/m26.png' type='image/png'>
-    <link rel='stylesheet' href='css/styles.css?v=8'/>
-</head>
-<body>
-<div class='page-wrapper'>
-    <?php include_once 'incl/sidebar.php'; ?>
-    <div class='main-content'>
 
         <div class='page-heading'>
             <h1><?php echo htmlspecialchars($site['site_name']); ?></h1>
@@ -74,7 +72,8 @@ $stmt->close();
         </div>
 
         <div class='card'>
-            <p><strong>Location:</strong> <?php echo htmlspecialchars($site['location']); ?></p>
+            <p><strong>Region:</strong> <?php echo htmlspecialchars($site['region'] ?? '—'); ?></p>
+            <p><strong>Location:</strong> <?php echo htmlspecialchars($site['location'] ?? '—'); ?></p>
             <?php if ($site['latitude'] != ''): ?>
             <p><strong>Coordinates:</strong> <?php echo $site['latitude'] . ', ' . $site['longitude']; ?></p>
             <?php endif; ?>
@@ -82,6 +81,32 @@ $stmt->close();
             <p><strong>Notes:</strong> <?php echo htmlspecialchars($site['notes']); ?></p>
             <?php endif; ?>
         </div>
+
+        <?php if ($cells->num_rows > 0): ?>
+        <div class='card'>
+            <h2 style='font-size:15px; color:#1a3a5c; margin-bottom:10px;'>
+                Antenna Configuration
+                <span style='font-weight:400; font-size:12px; color:#888;'>(reference — Eswatini Mobile LTE export)</span>
+            </h2>
+            <div class='table-scroll'>
+                <table class='data-table'>
+                    <tr><th>Sector</th><th>Cell</th><th>Band</th><th>Azimuth</th><th>M-Tilt</th><th>E-Tilt</th><th>Ant. Height</th><th>Status</th></tr>
+                    <?php while ($cl = $cells->fetch_assoc()): ?>
+                    <tr>
+                        <td><?php echo htmlspecialchars($cl['sector']); ?></td>
+                        <td><?php echo htmlspecialchars($cl['cell_name']); ?></td>
+                        <td><?php echo htmlspecialchars($cl['frequency_band']); ?></td>
+                        <td><?php echo htmlspecialchars($cl['azimuth']); ?><?php echo $cl['azimuth'] !== '' ? '&deg;' : ''; ?></td>
+                        <td><?php echo htmlspecialchars($cl['mech_tilt']); ?></td>
+                        <td><?php echo htmlspecialchars($cl['e_tilt']); ?></td>
+                        <td><?php echo htmlspecialchars($cl['antenna_height']); ?><?php echo $cl['antenna_height'] !== '' ? 'm' : ''; ?></td>
+                        <td><?php echo htmlspecialchars($cl['cell_status']); ?></td>
+                    </tr>
+                    <?php endwhile; ?>
+                </table>
+            </div>
+        </div>
+        <?php endif; ?>
 
         <h2>Documents</h2>
         <p><a href='upload_document.php?site_id=<?php echo $site_id; ?>' class='btn btn-secondary'>+ Upload Document</a></p>
@@ -97,7 +122,7 @@ $stmt->close();
                 $ext = strtolower(pathinfo($doc['doc_filename'], PATHINFO_EXTENSION));
                 echo "<tr>";
                 echo "<td><a href='uploads/" . htmlspecialchars($doc['doc_filename']) . "' target='_blank'>" . htmlspecialchars($doc['doc_name']) . "</a></td>";
-                echo "<td>" . $doc['uploaded_at'] . "</td>";
+                echo "<td>" . fmt_datetime($doc['uploaded_at']) . "</td>";
                 echo "<td>" . htmlspecialchars($doc['first_name'] . ' ' . $doc['last_name']) . "</td>";
                 echo "<td><a href='delete_document.php?document_id=" . $doc['document_id'] . "&site_id=$site_id' onclick='return confirm(\"Delete this document?\")'>Delete</a></td>";
                 echo "</tr>";
@@ -121,11 +146,11 @@ $stmt->close();
                 $badge = $row['status'] == 'in_progress' ? 'in-progress' : $row['status'];
                 $label = str_replace('_', ' ', $row['status']);
                 $progress = $row['done_items'] . '/' . $row['total_items'];
-                $completed = $row['completed_at'] ? $row['completed_at'] : '—';
+                $completed = fmt_datetime($row['completed_at']);
                 echo "<tr>";
                 echo "<td>" . htmlspecialchars($row['visit_type']) . "</td>";
                 echo "<td>" . htmlspecialchars($row['first_name'] . ' ' . $row['last_name']) . "</td>";
-                echo "<td>" . $row['scheduled_date'] . "</td>";
+                echo "<td>" . fmt_date($row['scheduled_date']) . "</td>";
                 echo "<td>" . $progress . "</td>";
                 echo "<td><span class='badge badge-$badge'>$label</span></td>";
                 echo "<td>" . $completed . "</td>";
@@ -140,7 +165,4 @@ $stmt->close();
         <br>
         <p><a href='view_sites.php'>&larr; Back to Sites</a></p>
 
-    </div>
-</div>
-</body>
-</html>
+<?php include 'incl/footer.php'; ?>

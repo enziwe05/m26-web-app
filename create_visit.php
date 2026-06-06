@@ -1,10 +1,6 @@
-﻿<?php
-if (!isset($_COOKIE['user_role']) || $_COOKIE['user_role'] != 'admin') {
-    echo "Unauthorised access! <a href='login.php'>Login</a>";
-    exit;
-}
-
-include_once 'incl/dbconn.php';
+<?php
+require_once 'incl/dbconn.php';
+require_staff();
 
 $message = "";
 
@@ -15,64 +11,53 @@ $employees = $conn->query("SELECT user_id, first_name, last_name FROM users WHER
 $preselect_site = isset($_GET['site_id']) ? (int)$_GET['site_id'] : 0;
 
 if (isset($_POST['visit_type'])) {
-    $site_id        = $_POST['site_id'];
-    $assigned_to    = $_POST['assigned_to_user_id'];
-    $visit_type     = trim($_POST['visit_type']);
-    $description    = trim($_POST['description']);
-    $scheduled_date = $_POST['scheduled_date'];
-    $created_by     = $_COOKIE['user_id'];
+    csrf_check();
+    $site_id          = (int)($_POST['site_id'] ?? 0);
+    $assigned_to      = (int)($_POST['assigned_to_user_id'] ?? 0);
+    $visit_type       = trim($_POST['visit_type'] ?? '');
+    $description      = trim($_POST['description'] ?? '');
+    $scheduled_date   = ($_POST['scheduled_date'] ?? '') !== '' ? $_POST['scheduled_date'] : null;
+    $maintenance_type = in_array($_POST['maintenance_type'] ?? '', ['active', 'passive']) ? $_POST['maintenance_type'] : 'active';
+    $created_by       = current_user_id();
 
-    if ($site_id == '' || $assigned_to == '' || $visit_type == '') {
+    // The logged-in account must still exist. A stale cookie (e.g. from an older
+    // database) would otherwise fail the foreign key and silently create nothing.
+    $chk = $conn->prepare("SELECT 1 FROM users WHERE user_id = ?");
+    $chk->bind_param('i', $created_by);
+    $chk->execute();
+    $creator_ok = (bool) $chk->get_result()->num_rows;
+    $chk->close();
+
+    if (!$creator_ok) {
+        header('Location: logout.php');   // session points at a missing user — re-login
+        exit;
+    }
+
+    if (!$site_id || !$assigned_to || $visit_type === '') {
         $message = "Site, technician and visit type are required.";
     } else {
-        // Collect non-empty item descriptions
-        $items = array();
-        for ($i = 1; $i <= 10; $i++) {
-            if (isset($_POST['item_' . $i]) && trim($_POST['item_' . $i]) != '') {
-                $items[] = trim($_POST['item_' . $i]);
-            }
-        }
+        $stmt = $conn->prepare("
+            INSERT INTO visits (site_id, assigned_to_user_id, created_by_user_id, visit_type, description, scheduled_date, maintenance_type, status)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 'assigned')
+        ");
+        $stmt->bind_param('iiissss', $site_id, $assigned_to, $created_by, $visit_type, $description, $scheduled_date, $maintenance_type);
 
-        if (count($items) == 0) {
-            $message = "Please add at least one item.";
-        } else {
-            $stmt = $conn->prepare("
-                INSERT INTO visits (site_id, assigned_to_user_id, created_by_user_id, visit_type, description, scheduled_date, status)
-                VALUES (?, ?, ?, ?, ?, ?, 'assigned')
-            ");
-            $stmt->bind_param('iiisss', $site_id, $assigned_to, $created_by, $visit_type, $description, $scheduled_date);
+        // Only redirect on a genuinely successful insert — never to visit_id 0
+        try {
             $stmt->execute();
             $visit_id = $stmt->insert_id;
             $stmt->close();
-
-            $sort = 1;
-            foreach ($items as $desc) {
-                $si = $conn->prepare("INSERT INTO visit_items (visit_id, item_description, sort_order) VALUES (?, ?, ?)");
-                $si->bind_param('isi', $visit_id, $desc, $sort);
-                $si->execute();
-                $si->close();
-                $sort++;
-            }
-
             header('Location: visit_detail.php?visit_id=' . $visit_id);
             exit;
+        } catch (mysqli_sql_exception $e) {
+            $stmt->close();
+            $message = "Could not create the visit. Please check the selected site and technician, then try again.";
         }
     }
 }
+$page_title = 'M26 | Create Visit';
+include 'incl/header.php';
 ?>
-<!DOCTYPE html>
-<html lang='en'>
-<head>
-    <meta charset='UTF-8'>
-    <meta name='viewport' content='width=device-width, initial-scale=1.0'>
-    <title>M26 | Create Visit</title>
-    <link rel='icon' href='images/m26.png' type='image/png'>
-    <link rel='stylesheet' href='css/styles.css?v=8'/>
-</head>
-<body>
-<div class='page-wrapper'>
-    <?php include_once 'incl/sidebar.php'; ?>
-    <div class='main-content'>
 
         <div class='page-heading'>
             <h1>Create Visit</h1>
@@ -84,6 +69,7 @@ if (isset($_POST['visit_type'])) {
 
         <div class='card'>
         <form method='POST' action='create_visit.php'>
+            <?php echo csrf_field(); ?>
 
             <div class='form-group'>
                 <label>Site *</label>
@@ -111,13 +97,33 @@ if (isset($_POST['visit_type'])) {
             </div>
 
             <div class='form-group'>
+                <label>Maintenance Type *</label>
+                <div style='display:flex; gap:24px; margin-top:6px;'>
+                    <?php $mt = isset($_POST['maintenance_type']) ? $_POST['maintenance_type'] : 'active'; ?>
+                    <label style='display:flex; align-items:center; gap:6px; font-weight:normal; cursor:pointer;'>
+                        <input type='radio' name='maintenance_type' value='active'
+                               <?php echo $mt == 'active' ? 'checked' : ''; ?>>
+                        Active Maintenance
+                    </label>
+                    <label style='display:flex; align-items:center; gap:6px; font-weight:normal; cursor:pointer;'>
+                        <input type='radio' name='maintenance_type' value='passive'
+                               <?php echo $mt == 'passive' ? 'checked' : ''; ?>>
+                        Passive Maintenance
+                    </label>
+                </div>
+                <small style='color:#666; display:block; margin-top:4px;'>
+                    Active = hands-on work performed &nbsp;|&nbsp; Passive = observation / monitoring only
+                </small>
+            </div>
+
+            <div class='form-group'>
                 <label>Visit Type *</label>
                 <input type='text' name='visit_type' placeholder='e.g. Generator service, Battery check'
                        value='<?php echo isset($_POST['visit_type']) ? htmlspecialchars($_POST['visit_type']) : ""; ?>'>
             </div>
 
             <div class='form-group'>
-                <label>Description</label>
+                <label>Description / Instructions for Technician</label>
                 <textarea name='description' rows='3'><?php echo isset($_POST['description']) ? htmlspecialchars($_POST['description']) : ""; ?></textarea>
             </div>
 
@@ -126,19 +132,6 @@ if (isset($_POST['visit_type'])) {
                 <input type='date' name='scheduled_date' value='<?php echo isset($_POST['scheduled_date']) ? htmlspecialchars($_POST['scheduled_date']) : ""; ?>'>
             </div>
 
-            <hr>
-            <h3>Items (what the tech needs to do)</h3>
-            <p style='font-size:13px; color:#666;'>Fill in as many items as needed. Leave the rest blank.</p>
-
-            <?php for ($i = 1; $i <= 10; $i++): ?>
-            <div class='form-group'>
-                <label>Item <?php echo $i; ?></label>
-                <input type='text' name='item_<?php echo $i; ?>'
-                       value='<?php echo isset($_POST['item_' . $i]) ? htmlspecialchars($_POST['item_' . $i]) : ""; ?>'
-                       placeholder='<?php echo $i == 1 ? "e.g. Inspect generator engine" : ""; ?>'>
-            </div>
-            <?php endfor; ?>
-
             <input type='submit' value='Create Visit' class='btn btn-primary'>
             &nbsp;
             <a href='view_visits.php' class='btn btn-secondary'>Cancel</a>
@@ -146,7 +139,4 @@ if (isset($_POST['visit_type'])) {
         </form>
         </div>
 
-    </div>
-</div>
-</body>
-</html>
+<?php include 'incl/footer.php'; ?>

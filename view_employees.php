@@ -1,10 +1,7 @@
-﻿<?php
-if (!isset($_COOKIE['user_role']) || $_COOKIE['user_role'] != 'admin') {
-    echo "Unauthorised access! <a href='login.php'>Login</a>";
-    exit;
-}
+<?php
+require_once 'incl/dbconn.php';
+require_staff();
 
-include_once 'incl/dbconn.php';
 
 $search = isset($_GET['search']) ? trim($_GET['search']) : '';
 
@@ -33,20 +30,9 @@ if ($search != '') {
         ORDER BY u.role, u.first_name
     ");
 }
+$page_title = 'M26 | Employees';
+include 'incl/header.php';
 ?>
-<!DOCTYPE html>
-<html lang='en'>
-<head>
-    <meta charset='UTF-8'>
-    <meta name='viewport' content='width=device-width, initial-scale=1.0'>
-    <title>M26 | Employees</title>
-    <link rel='icon' href='images/m26.png' type='image/png'>
-    <link rel='stylesheet' href='css/styles.css?v=8'/>
-</head>
-<body>
-<div class='page-wrapper'>
-    <?php include_once 'incl/sidebar.php'; ?>
-    <div class='main-content'>
 
         <div class='page-heading'>
             <h1>Employees</h1>
@@ -68,7 +54,7 @@ if ($search != '') {
         } else {
             echo "<div class='table-scroll'>";
             echo "<table class='data-table'>";
-            echo "<tr><th>Name</th><th>Username</th><th>Role</th><th>Team</th><th>Supervisor</th><th>Phone</th><th>Status</th></tr>";
+            echo "<tr><th>Name</th><th>Username</th><th>Role</th><th>Team</th><th>Supervisor</th><th>Phone</th><th>Status</th>" . (is_admin() ? "<th></th>" : "") . "</tr>";
             $status_labels = ['active' => 'Active', 'on_leave' => 'On Leave', 'inactive' => 'Inactive'];
             while ($row = $result->fetch_assoc()) {
                 $status = $row['status'] ?? 'active';
@@ -82,6 +68,7 @@ if ($search != '') {
                 echo "<td>" . htmlspecialchars($row['phone'] ?? '') . "</td>";
                 echo "<td>";
                 echo "<form method='POST' action='change_employee_status.php' style='margin:0'>";
+                echo csrf_field();
                 echo "<input type='hidden' name='user_id' value='" . $row['user_id'] . "'>";
                 echo "<select name='status' class='status-select status-" . $status . "' onchange=\"this.className='status-select status-'+this.value; this.form.submit()\">";
                 foreach ($status_labels as $val => $label) {
@@ -91,6 +78,12 @@ if ($search != '') {
                 echo "</select>";
                 echo "</form>";
                 echo "</td>";
+                if (is_admin()) {
+                    echo "<td style='white-space:nowrap'>";
+                    echo "<a href='edit_employee.php?user_id=" . $row['user_id'] . "' class='btn btn-secondary' style='font-size:12px;padding:4px 10px;'>Edit</a> ";
+                    echo "<a href='delete_employee.php?user_id=" . $row['user_id'] . "' class='btn btn-danger' style='font-size:12px;padding:4px 10px;'>Delete</a>";
+                    echo "</td>";
+                }
                 echo "</tr>";
             }
             echo "</table>";
@@ -98,7 +91,4 @@ if ($search != '') {
         }
         ?>
 
-    </div>
-</div>
-</body>
-</html>
+<?php include 'incl/footer.php'; ?>

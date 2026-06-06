@@ -1,17 +1,14 @@
-﻿<?php
-if (!isset($_COOKIE['user_role']) || $_COOKIE['user_role'] != 'admin') {
-    echo "Unauthorised access! <a href='login.php'>Login</a>";
-    exit;
-}
-
-include_once 'incl/dbconn.php';
+<?php
+require_once 'incl/dbconn.php';
+require_admin();
 
 $message = "";
 
 // Fetch admins for the supervisor dropdown
-$supervisors = $conn->query("SELECT user_id, first_name, last_name FROM users WHERE role = 'admin' AND status = 'active' ORDER BY first_name");
+$supervisors = $conn->query("SELECT user_id, first_name, last_name FROM users WHERE role IN ('admin','supervisor') AND status = 'active' ORDER BY first_name");
 
 if (isset($_POST['username'])) {
+    csrf_check();
     $first_name   = trim($_POST['first_name']);
     $last_name    = trim($_POST['last_name']);
     $username     = trim($_POST['username']);
@@ -44,29 +41,19 @@ if (isset($_POST['username'])) {
             ");
             $stmt->bind_param('ssssssssi', $first_name, $last_name, $username, $hash, $role, $phone, $email, $team, $supervisor_id);
 
-            if ($stmt->execute()) {
+            try {
+                $stmt->execute();
                 $message = "Employee added successfully!";
-            } else {
+            } catch (mysqli_sql_exception $e) {
                 $message = "Error adding employee. Please try again.";
             }
             $stmt->close();
         }
     }
 }
+$page_title = 'M26 | Add Employee';
+include 'incl/header.php';
 ?>
-<!DOCTYPE html>
-<html lang='en'>
-<head>
-    <meta charset='UTF-8'>
-    <meta name='viewport' content='width=device-width, initial-scale=1.0'>
-    <title>M26 | Add Employee</title>
-    <link rel='icon' href='images/m26.png' type='image/png'>
-    <link rel='stylesheet' href='css/styles.css?v=8'/>
-</head>
-<body>
-<div class='page-wrapper'>
-    <?php include_once 'incl/sidebar.php'; ?>
-    <div class='main-content'>
 
         <div class='page-heading'>
             <h1>Add Employee</h1>
@@ -80,6 +67,7 @@ if (isset($_POST['username'])) {
 
         <div class='card'>
         <form method='POST' action='add_employee.php'>
+            <?php echo csrf_field(); ?>
 
             <div class='form-group'>
                 <label>First Name *</label>
@@ -105,6 +93,7 @@ if (isset($_POST['username'])) {
                 <label>Role *</label>
                 <select name='role'>
                     <option value='employee'>Employee (Field Tech)</option>
+                    <option value='supervisor'>Supervisor</option>
                     <option value='admin'>Admin</option>
                 </select>
             </div>
@@ -143,7 +132,4 @@ if (isset($_POST['username'])) {
         </form>
         </div>
 
-    </div>
-</div>
-</body>
-</html>
+<?php include 'incl/footer.php'; ?>
