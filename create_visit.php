@@ -10,14 +10,13 @@ $employees = $conn->query("SELECT user_id, first_name, last_name FROM users WHER
 // Pre-select site if coming from site_detail.php
 $preselect_site = isset($_GET['site_id']) ? (int)$_GET['site_id'] : 0;
 
-if (isset($_POST['visit_type'])) {
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     csrf_check();
     $site_id          = (int)($_POST['site_id'] ?? 0);
     $assigned_to      = (int)($_POST['assigned_to_user_id'] ?? 0);
-    $visit_type       = trim($_POST['visit_type'] ?? '');
+    $visit_type       = '';   // visit type no longer captured on creation
     $description      = trim($_POST['description'] ?? '');
     $scheduled_date   = ($_POST['scheduled_date'] ?? '') !== '' ? $_POST['scheduled_date'] : null;
-    $maintenance_type = in_array($_POST['maintenance_type'] ?? '', ['active', 'passive']) ? $_POST['maintenance_type'] : 'active';
     $created_by       = current_user_id();
 
     // The logged-in account must still exist. A stale cookie (e.g. from an older
@@ -33,14 +32,14 @@ if (isset($_POST['visit_type'])) {
         exit;
     }
 
-    if (!$site_id || !$assigned_to || $visit_type === '') {
-        $message = "Site, technician and visit type are required.";
+    if (!$site_id || !$assigned_to) {
+        $message = "Site and technician are required.";
     } else {
         $stmt = $conn->prepare("
-            INSERT INTO visits (site_id, assigned_to_user_id, created_by_user_id, visit_type, description, scheduled_date, maintenance_type, status)
-            VALUES (?, ?, ?, ?, ?, ?, ?, 'assigned')
+            INSERT INTO visits (site_id, assigned_to_user_id, created_by_user_id, visit_type, description, scheduled_date, status)
+            VALUES (?, ?, ?, ?, ?, ?, 'assigned')
         ");
-        $stmt->bind_param('iiissss', $site_id, $assigned_to, $created_by, $visit_type, $description, $scheduled_date, $maintenance_type);
+        $stmt->bind_param('iiisss', $site_id, $assigned_to, $created_by, $visit_type, $description, $scheduled_date);
 
         // Only redirect on a genuinely successful insert — never to visit_id 0
         try {
@@ -94,32 +93,6 @@ include 'incl/header.php';
                     }
                     ?>
                 </select>
-            </div>
-
-            <div class='form-group'>
-                <label>Maintenance Type *</label>
-                <div style='display:flex; gap:24px; margin-top:6px;'>
-                    <?php $mt = isset($_POST['maintenance_type']) ? $_POST['maintenance_type'] : 'active'; ?>
-                    <label style='display:flex; align-items:center; gap:6px; font-weight:normal; cursor:pointer;'>
-                        <input type='radio' name='maintenance_type' value='active'
-                               <?php echo $mt == 'active' ? 'checked' : ''; ?>>
-                        Active Maintenance
-                    </label>
-                    <label style='display:flex; align-items:center; gap:6px; font-weight:normal; cursor:pointer;'>
-                        <input type='radio' name='maintenance_type' value='passive'
-                               <?php echo $mt == 'passive' ? 'checked' : ''; ?>>
-                        Passive Maintenance
-                    </label>
-                </div>
-                <small style='color:#666; display:block; margin-top:4px;'>
-                    Active = hands-on work performed &nbsp;|&nbsp; Passive = observation / monitoring only
-                </small>
-            </div>
-
-            <div class='form-group'>
-                <label>Visit Type *</label>
-                <input type='text' name='visit_type' placeholder='e.g. Generator service, Battery check'
-                       value='<?php echo isset($_POST['visit_type']) ? htmlspecialchars($_POST['visit_type']) : ""; ?>'>
             </div>
 
             <div class='form-group'>

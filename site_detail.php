@@ -82,32 +82,6 @@ include 'incl/header.php';
             <?php endif; ?>
         </div>
 
-        <?php if ($cells->num_rows > 0): ?>
-        <div class='card'>
-            <h2 style='font-size:15px; color:#1a3a5c; margin-bottom:10px;'>
-                Antenna Configuration
-                <span style='font-weight:400; font-size:12px; color:#888;'>(reference — Eswatini Mobile LTE export)</span>
-            </h2>
-            <div class='table-scroll'>
-                <table class='data-table'>
-                    <tr><th>Sector</th><th>Cell</th><th>Band</th><th>Azimuth</th><th>M-Tilt</th><th>E-Tilt</th><th>Ant. Height</th><th>Status</th></tr>
-                    <?php while ($cl = $cells->fetch_assoc()): ?>
-                    <tr>
-                        <td><?php echo htmlspecialchars($cl['sector']); ?></td>
-                        <td><?php echo htmlspecialchars($cl['cell_name']); ?></td>
-                        <td><?php echo htmlspecialchars($cl['frequency_band']); ?></td>
-                        <td><?php echo htmlspecialchars($cl['azimuth']); ?><?php echo $cl['azimuth'] !== '' ? '&deg;' : ''; ?></td>
-                        <td><?php echo htmlspecialchars($cl['mech_tilt']); ?></td>
-                        <td><?php echo htmlspecialchars($cl['e_tilt']); ?></td>
-                        <td><?php echo htmlspecialchars($cl['antenna_height']); ?><?php echo $cl['antenna_height'] !== '' ? 'm' : ''; ?></td>
-                        <td><?php echo htmlspecialchars($cl['cell_status']); ?></td>
-                    </tr>
-                    <?php endwhile; ?>
-                </table>
-            </div>
-        </div>
-        <?php endif; ?>
-
         <h2>Documents</h2>
         <p><a href='upload_document.php?site_id=<?php echo $site_id; ?>' class='btn btn-secondary'>+ Upload Document</a></p>
 
@@ -161,6 +135,33 @@ include 'incl/header.php';
             echo "</div>";
         }
         ?>
+
+        <?php if ($cells->num_rows > 0): ?>
+        <br>
+        <div class='card'>
+            <h2 style='font-size:15px; color:#1a3a5c; margin-bottom:10px;'>
+                Antenna Configuration
+                <span style='font-weight:400; font-size:12px; color:#888;'>(reference — Eswatini Mobile LTE export)</span>
+            </h2>
+            <div class='table-scroll'>
+                <table class='data-table'>
+                    <tr><th>Sector</th><th>Cell</th><th>Band</th><th>Azimuth</th><th>M-Tilt</th><th>E-Tilt</th><th>Ant. Height</th><th>Status</th></tr>
+                    <?php while ($cl = $cells->fetch_assoc()): ?>
+                    <tr>
+                        <td><?php echo htmlspecialchars($cl['sector']); ?></td>
+                        <td><?php echo htmlspecialchars($cl['cell_name']); ?></td>
+                        <td><?php echo htmlspecialchars($cl['frequency_band']); ?></td>
+                        <td><?php echo htmlspecialchars($cl['azimuth']); ?><?php echo $cl['azimuth'] !== '' ? '&deg;' : ''; ?></td>
+                        <td><?php echo htmlspecialchars($cl['mech_tilt']); ?></td>
+                        <td><?php echo htmlspecialchars($cl['e_tilt']); ?></td>
+                        <td><?php echo htmlspecialchars($cl['antenna_height']); ?><?php echo $cl['antenna_height'] !== '' ? 'm' : ''; ?></td>
+                        <td><?php echo htmlspecialchars($cl['cell_status']); ?></td>
+                    </tr>
+                    <?php endwhile; ?>
+                </table>
+            </div>
+        </div>
+        <?php endif; ?>
 
         <br>
         <p><a href='view_sites.php'>&larr; Back to Sites</a></p>
