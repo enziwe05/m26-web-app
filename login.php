@@ -46,7 +46,7 @@ if (isset($_POST['username'])) {
     <meta name='viewport' content='width=device-width, initial-scale=1.0'>
     <title>M26</title>
     <link rel='icon' href='images/m26.png' type='image/png'>
-    <link rel='stylesheet' href='css/styles.css?v=10'/>
+    <link rel='stylesheet' href='css/styles.css?v=13'/>
 </head>
 <body>
 <div class='login-page'>

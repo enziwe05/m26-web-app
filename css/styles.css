@@ -16,6 +16,9 @@ body {
 a { color: #1a5ca8; text-decoration: none; }
 a:hover { text-decoration: underline; }
 
+/* Media never overflows its container (key safety net on phones) */
+img { max-width: 100%; }
+
 /* --- Layout -------------------------------------------------------------- */
 .page-wrapper {
     display: flex;
@@ -713,6 +716,37 @@ textarea { resize: vertical; min-height: 80px; }
     .item-row  { flex-wrap: wrap; gap: 8px; }
     .item-meta { width: 100%; }
 
+    /* Inputs at 16px stop iOS Safari auto-zooming on focus */
+    input[type='text'],
+    input[type='password'],
+    input[type='email'],
+    input[type='tel'],
+    input[type='date'],
+    input[type='number'],
+    select,
+    textarea { font-size: 16px; }
+
+    /* --- Maintenance / inspection forms --------------------------------- */
+    /* Let the card scroll sideways so wide tables are never cut off */
+    .mf-section.card { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+    .mf-section h2 { font-size: 14px; }
+
+    /* Drop the fixed pixel column widths (set inline) so columns fit the
+       screen; the card still scrolls if content is genuinely too wide */
+    .mf-table th,
+    .mf-table td { width: auto !important; padding: 6px 7px; }
+
+    .mf-table { font-size: 12px; }
+    .mf-table select,
+    .mf-table input[type='text'] { font-size: 16px; padding: 6px; }
+
+    /* Antenna entry grid: 5 columns → 2 on phones */
+    .antenna-grid { grid-template-columns: 1fr 1fr !important; }
+
+    /* Antenna read-only grid: allow sideways scroll */
+    .ant-grid { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
     /* Login */
     .login-card { width: calc(100% - 32px); padding: 30px 20px; }
 }
@@ -724,4 +758,7 @@ textarea { resize: vertical; min-height: 80px; }
     .stat-box        { min-width: unset; }
     .btn             { padding: 8px 14px; font-size: 13px; }
     .page-heading h1 { font-size: 15px; }
+
+    /* Antenna entry grid → single column on the narrowest phones */
+    .antenna-grid    { grid-template-columns: 1fr !important; }
 }
