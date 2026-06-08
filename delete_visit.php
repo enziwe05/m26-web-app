@@ -19,12 +19,6 @@ $stmt->close();
 
 if (!$visit) { header('Location: view_visits.php'); exit; }
 
-$stmt = $conn->prepare("SELECT COUNT(*) AS n FROM visit_items WHERE visit_id = ?");
-$stmt->bind_param('i', $visit_id);
-$stmt->execute();
-$item_count = $stmt->get_result()->fetch_assoc()['n'];
-$stmt->close();
-
 $stmt = $conn->prepare("SELECT COUNT(*) AS n FROM visit_photos WHERE visit_id = ?");
 $stmt->bind_param('i', $visit_id);
 $stmt->execute();
@@ -72,7 +66,6 @@ include 'incl/header.php';
                 <tr><th>Assigned to</th><td><?php echo htmlspecialchars($visit['first_name'] . ' ' . $visit['last_name']); ?></td></tr>
                 <tr><th>Scheduled</th><td><?php echo fmt_date($visit['scheduled_date']); ?></td></tr>
                 <tr><th>Status</th><td><span class='badge badge-<?php echo $badge; ?>'><?php echo $label; ?></span></td></tr>
-                <tr><th>Checklist items</th><td><?php echo $item_count; ?></td></tr>
                 <tr><th>Photos</th><td><?php echo $photo_count; ?></td></tr>
             </table>
 

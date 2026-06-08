@@ -32,7 +32,7 @@ foreach ($form_sections as $sec_def) {
     foreach ($sec_def["fields"] as $fk => $flabel) { $field_labels[$fk] = $flabel; }
 }
 
-// Collect only the visits that actually have a fault or an issue note
+// Collect only the visits that actually have one or more faulty items
 $rows = [];
 $total_faults = 0;
 while ($f = $forms->fetch_assoc()) {
@@ -50,8 +50,8 @@ while ($f = $forms->fetch_assoc()) {
         }
     }
     $comment = trim($f['general_comments'] ?? '');
-    if (empty($faults) && $comment === '') {
-        continue; // clean visit — skip
+    if (empty($faults)) {
+        continue; // no faults flagged — don't list on the Faults page
     }
     $total_faults += count($faults);
     $rows[] = [

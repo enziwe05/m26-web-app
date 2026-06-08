@@ -46,9 +46,7 @@ $offset      = ($page - 1) * $per_page;
 $sql = "
     SELECT v.visit_id, s.site_code, s.site_name, v.visit_type, v.status,
            v.scheduled_date, v.completed_at,
-           u.first_name, u.last_name,
-           (SELECT COUNT(*) FROM visit_items WHERE visit_id = v.visit_id) AS total_items,
-           (SELECT COUNT(*) FROM visit_items WHERE visit_id = v.visit_id AND is_done = 1) AS done_items
+           u.first_name, u.last_name
     FROM visits v
     JOIN sites s ON s.site_id = v.site_id
     JOIN users u ON u.user_id = v.assigned_to_user_id
@@ -106,17 +104,15 @@ include 'incl/header.php';
             echo "<p style='font-size:13px; color:#888; margin-bottom:10px;'>Showing " . ($offset + 1) . "–" . ($offset + $result->num_rows) . " of $total visits</p>";
             echo "<div class='table-scroll'>";
             echo "<table class='data-table'>";
-            echo "<tr><th>Site</th><th>Type</th><th>Tech</th><th>Scheduled</th><th>Progress</th><th>Status</th><th></th></tr>";
+            echo "<tr><th>Site</th><th>Type</th><th>Tech</th><th>Scheduled</th><th>Status</th><th></th></tr>";
             while ($row = $result->fetch_assoc()) {
                 $badge    = $row['status'] == 'in_progress' ? 'in-progress' : $row['status'];
                 $label    = str_replace('_', ' ', $row['status']);
-                $progress = $row['done_items'] . '/' . $row['total_items'];
                 echo "<tr>";
                 echo "<td>" . htmlspecialchars($row['site_name']) . "</td>";
                 echo "<td>" . htmlspecialchars($row['visit_type']) . "</td>";
                 echo "<td>" . htmlspecialchars($row['first_name'] . ' ' . $row['last_name']) . "</td>";
                 echo "<td>" . fmt_date($row['scheduled_date']) . "</td>";
-                echo "<td>" . $progress . "</td>";
                 echo "<td><span class='badge badge-$badge'>$label</span></td>";
                 echo "<td><a href='visit_detail.php?visit_id=" . $row['visit_id'] . "'>View</a></td>";
                 echo "</tr>";

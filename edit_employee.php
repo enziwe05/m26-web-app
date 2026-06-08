@@ -14,6 +14,7 @@ $stmt->close();
 if (!$user) { header('Location: view_employees.php'); exit; }
 
 $supervisors = $conn->query("SELECT user_id, first_name, last_name FROM users WHERE role IN ('admin','supervisor') AND status = 'active' AND user_id != $user_id ORDER BY first_name");
+$clients     = $conn->query("SELECT client_id, name FROM clients WHERE status = 'active' ORDER BY name");
 
 $message = '';
 $msg_type = 'alert-error';
@@ -28,10 +29,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $email         = trim($_POST['email']);
     $team          = trim($_POST['team']);
     $supervisor_id = $_POST['supervisor_id'] !== '' ? (int)$_POST['supervisor_id'] : null;
+    $client_id     = ($role === 'client' && ($_POST['client_id'] ?? '') !== '') ? (int)$_POST['client_id'] : null;
     $new_password  = $_POST['new_password'];
 
     if ($first_name === '' || $last_name === '' || $username === '') {
         $message = "First name, last name and username are required.";
+    } elseif ($role === 'client' && $client_id === null) {
+        $message = "Please pick which client this portal login belongs to.";
     } else {
         // Check username not taken by another user
         $check = $conn->prepare("SELECT user_id FROM users WHERE username = ? AND user_id != ?");
@@ -46,11 +50,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } else {
             if ($new_password !== '') {
                 $hash = password_hash($new_password, PASSWORD_BCRYPT);
-                $stmt = $conn->prepare("UPDATE users SET first_name=?, last_name=?, username=?, password_hash=?, role=?, phone=?, email=?, team=?, supervisor_id=? WHERE user_id=?");
-                $stmt->bind_param('ssssssssii', $first_name, $last_name, $username, $hash, $role, $phone, $email, $team, $supervisor_id, $user_id);
+                $stmt = $conn->prepare("UPDATE users SET first_name=?, last_name=?, username=?, password_hash=?, role=?, phone=?, email=?, team=?, supervisor_id=?, client_id=? WHERE user_id=?");
+                $stmt->bind_param('ssssssssiii', $first_name, $last_name, $username, $hash, $role, $phone, $email, $team, $supervisor_id, $client_id, $user_id);
             } else {
-                $stmt = $conn->prepare("UPDATE users SET first_name=?, last_name=?, username=?, role=?, phone=?, email=?, team=?, supervisor_id=? WHERE user_id=?");
-                $stmt->bind_param('sssssssii', $first_name, $last_name, $username, $role, $phone, $email, $team, $supervisor_id, $user_id);
+                $stmt = $conn->prepare("UPDATE users SET first_name=?, last_name=?, username=?, role=?, phone=?, email=?, team=?, supervisor_id=?, client_id=? WHERE user_id=?");
+                $stmt->bind_param('sssssssiii', $first_name, $last_name, $username, $role, $phone, $email, $team, $supervisor_id, $client_id, $user_id);
             }
             try {
                 $stmt->execute();
@@ -105,11 +109,26 @@ include 'incl/header.php';
             </div>
             <div class='form-group'>
                 <label>Role *</label>
-                <select name='role'>
+                <select name='role' id='role-select' onchange='toggleClient()'>
                     <option value='employee'   <?php echo $user['role']==='employee'   ? 'selected':''?>>Employee (Field Tech)</option>
                     <option value='supervisor' <?php echo $user['role']==='supervisor' ? 'selected':''?>>Supervisor</option>
                     <option value='admin'      <?php echo $user['role']==='admin'      ? 'selected':''?>>Admin</option>
+                    <option value='client'     <?php echo $user['role']==='client'     ? 'selected':''?>>Client (Portal)</option>
                 </select>
+            </div>
+
+            <div class='form-group' id='client-group' style='display:none;'>
+                <label>Client *</label>
+                <select name='client_id'>
+                    <option value=''>-- Select client --</option>
+                    <?php while ($clients && $cl = $clients->fetch_assoc()): ?>
+                        <option value='<?php echo $cl['client_id']; ?>'
+                            <?php echo (string)$cl['client_id'] === (string)($user['client_id'] ?? '') ? 'selected' : ''; ?>>
+                            <?php echo htmlspecialchars($cl['name']); ?>
+                        </option>
+                    <?php endwhile; ?>
+                </select>
+                <small style='color:#888; display:block; margin-top:4px;'>This login sees only that client's sites (read-only).</small>
             </div>
             <div class='form-group'>
                 <label>Phone</label>
@@ -141,5 +160,13 @@ include 'incl/header.php';
             <a href='view_employees.php' class='btn btn-secondary'>Cancel</a>
         </form>
         </div>
+
+        <script>
+        function toggleClient() {
+            var role = document.getElementById('role-select').value;
+            document.getElementById('client-group').style.display = (role === 'client') ? 'block' : 'none';
+        }
+        toggleClient();
+        </script>
 
 <?php include 'incl/footer.php'; ?>

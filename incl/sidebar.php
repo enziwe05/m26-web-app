@@ -9,20 +9,37 @@
         $role = current_user_role();
         $here = basename($_SERVER['PHP_SELF'] ?? '');
 
-        // Helper: mark a link active when it points at the current page
-        $nav = function (string $file, string $label) use ($here) {
-            $active = ($here === $file) ? " class='active'" : '';
-            echo "<li><a href='{$file}'{$active}>{$label}</a></li>";
+        // A link is "active" when the current page is its target OR a related sub-page,
+        // so detail/edit pages still highlight the section they belong to.
+        $nav = function (string $file, string $label, array $related = []) use ($here) {
+            $on = ($here === $file) || in_array($here, $related, true);
+            echo "<li><a href='{$file}'" . ($on ? " class='active'" : '') . ">{$label}</a></li>";
+        };
+        // Small section label to group the menu (hidden on the mobile top bar)
+        $heading = function (string $label) {
+            echo "<li class='nav-heading'>{$label}</li>";
         };
 
         if ($role === 'admin' || $role === 'supervisor') {
             $nav('admin_dashboard.php', 'Dashboard');
-            $nav('view_sites.php',      'Sites');
-            $nav('view_visits.php',     'All Visits');
-            $nav('faults.php',          'Faults');
-            $nav('view_employees.php',  'Employees');
+
+            $heading('Sites & Visits');
+            $nav('view_sites.php',  'Sites',  ['site_detail.php', 'add_site.php', 'upload_document.php']);
+            $nav('view_visits.php', 'Visits', ['visit_detail.php', 'create_visit.php', 'edit_visit.php', 'delete_visit.php', 'maintenance_form.php']);
+            $nav('faults.php',      'Faults');
+
+            $heading('Vehicle Fleet');
+            $nav('view_vehicles.php',       'Vehicles & Weekly Checks', ['vehicle_detail.php', 'add_vehicle.php', 'edit_vehicle.php']);
+            $nav('vehicle_inspections.php', 'Daily Inspection Log',     ['inspection_detail.php']);
+
+            $heading('People');
+            $nav('view_employees.php', 'Employees', ['add_employee.php', 'edit_employee.php']);
+            $nav('view_clients.php',   'Clients',   ['add_client.php', 'edit_client.php']);
         } elseif ($role === 'employee') {
-            $nav('employee_dashboard.php', 'My Visits');
+            $nav('employee_dashboard.php', 'My Visits',           ['employee_visit.php']);
+            $nav('vehicle_inspection.php', 'Daily Vehicle Check');
+        } elseif ($role === 'client') {
+            $nav('client_dashboard.php', 'My Sites', ['client_site_detail.php', 'client_visit_detail.php']);
         } else {
             $nav('login.php', 'Login');
         }

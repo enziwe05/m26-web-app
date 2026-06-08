@@ -70,6 +70,17 @@ img { max-width: 100%; }
     flex: 1;
 }
 
+/* Section label that groups menu items */
+.sidebar-links .nav-heading {
+    padding: 16px 22px 5px;
+    font-size: 10.5px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .08em;
+    color: rgba(255,255,255,0.38);
+    pointer-events: none;
+}
+
 .sidebar-links li a {
     display: block;
     padding: 11px 22px;
@@ -193,6 +204,32 @@ textarea { resize: vertical; min-height: 80px; }
 
 .page-heading h1 { font-size: 22px; color: #1a3a5c; }
 
+/* Collapsible "show more" section (keeps dense detail out of the way) */
+.detail-toggle { margin-bottom: 22px; }
+.detail-toggle > summary {
+    cursor: pointer;
+    display: inline-block;
+    padding: 9px 16px;
+    background: #e8ecf1;
+    color: #333;
+    border-radius: 5px;
+    font-size: 13px;
+    font-weight: 600;
+    list-style: none;
+}
+.detail-toggle > summary::-webkit-details-marker { display: none; }
+.detail-toggle > summary::before { content: '\25B8\00a0'; }      /* ▸ */
+.detail-toggle[open] > summary::before { content: '\25BE\00a0'; } /* ▾ */
+
+/* Short descriptive line under a page heading */
+.page-intro {
+    font-size: 13px;
+    color: #6b7280;
+    margin: -10px 0 18px;
+    max-width: 760px;
+    line-height: 1.5;
+}
+
 /* --- Section heading ----------------------------------------------------- */
 .section-heading {
     font-size: 13px;
@@ -293,6 +330,8 @@ textarea { resize: vertical; min-height: 80px; }
 .badge-assigned    { background: #e8f0fb; color: #1a5ca8; }
 .badge-in-progress { background: #fff3cd; color: #856404; }
 .badge-completed   { background: #d1f2d1; color: #1a6b1a; }
+.badge-attention   { background: #ffe5cc; color: #8a4b00; }
+.badge-critical    { background: #f8d7da; color: #721c24; }
 
 /* --- Search/filter bar --------------------------------------------------- */
 .filter-bar {
@@ -339,22 +378,6 @@ textarea { resize: vertical; min-height: 80px; }
     text-align: center;
     margin-top: 4px;
 }
-
-/* --- Item checklist (employee) ------------------------------------------- */
-.item-row {
-    display: flex;
-    align-items: center;
-    gap: 14px;
-    padding: 14px 0;
-    border-bottom: 1px solid #eef0f4;
-}
-
-.item-row:last-child { border-bottom: none; }
-
-.item-done-icon { font-size: 20px; color: #1a6b1a; }
-.item-pending-icon { font-size: 20px; color: #bbb; }
-.item-desc { flex: 1; font-size: 15px; }
-.item-meta { font-size: 12px; color: #888; }
 
 /* --- File inputs --------------------------------------------------------- */
 .file-upload-group {
@@ -425,9 +448,10 @@ textarea { resize: vertical; min-height: 80px; }
 .mf-table input[type='text']:focus { outline: none; border-color: #0d6efd; }
 
 /* Inspection status colours */
-.status-ok     { color: #198754; font-weight: 600; }
-.status-faulty { color: #dc3545; font-weight: 600; }
-.status-na     { color: #6c757d; }
+.status-ok        { color: #198754; font-weight: 600; }
+.status-attention { color: #b35900; font-weight: 600; }
+.status-faulty    { color: #dc3545; font-weight: 600; }
+.status-na        { color: #6c757d; }
 
 /* Maintenance-type badge (active / passive) */
 .badge-mtype {
@@ -640,6 +664,9 @@ textarea { resize: vertical; min-height: 80px; }
 
     .sidebar-links li { display: flex; align-items: stretch; }
 
+    /* Section labels are desktop-only; the mobile bar is a flat scroll */
+    .sidebar-links .nav-heading { display: none; }
+
     .sidebar-links li a {
         display: flex;
         align-items: center;
@@ -711,10 +738,6 @@ textarea { resize: vertical; min-height: 80px; }
 
     /* File upload */
     .file-upload-group { flex-direction: column; }
-
-    /* Item checklist */
-    .item-row  { flex-wrap: wrap; gap: 8px; }
-    .item-meta { width: 100%; }
 
     /* Inputs at 16px stop iOS Safari auto-zooming on focus */
     input[type='text'],

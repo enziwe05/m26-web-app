@@ -82,6 +82,8 @@ include 'incl/header.php';
             &nbsp;
             <a href='view_employees.php' class='btn btn-secondary'>Employees</a>
             &nbsp;
+            <a href='view_vehicles.php' class='btn btn-secondary'>Vehicles</a>
+            &nbsp;
             <a href='add_site.php' class='btn btn-secondary'>Add Site</a>
         </p>
 

@@ -24,22 +24,12 @@ if ($visit['status'] === 'completed') {
     exit;
 }
 
-function load_items(mysqli $conn, int $visit_id): array {
-    $stmt = $conn->prepare("SELECT item_id, item_description, is_done, sort_order FROM visit_items WHERE visit_id = ? ORDER BY sort_order");
-    $stmt->bind_param('i', $visit_id);
-    $stmt->execute();
-    $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
-    $stmt->close();
-    return $rows;
-}
-
 function load_dropdowns(mysqli $conn): array {
     $sites = $conn->query("SELECT site_id, site_name FROM sites ORDER BY site_name");
     $techs = $conn->query("SELECT user_id, first_name, last_name FROM users WHERE role = 'employee' AND status = 'active' ORDER BY first_name");
     return [$sites, $techs];
 }
 
-$items = load_items($conn, $visit_id);
 [$sites, $techs] = load_dropdowns($conn);
 
 $message  = '';
@@ -61,41 +51,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $stmt->execute();
         $stmt->close();
 
-        // Update / delete existing pending items
-        $max_sort = count($items) > 0 ? max(array_column($items, 'sort_order')) : 0;
-        foreach ($items as $item) {
-            if ($item['is_done']) continue;
-            $desc = trim($_POST['item_existing_' . $item['item_id']] ?? '');
-            if ($desc !== '') {
-                $stmt = $conn->prepare("UPDATE visit_items SET item_description=? WHERE item_id=?");
-                $stmt->bind_param('si', $desc, $item['item_id']);
-                $stmt->execute();
-                $stmt->close();
-            } else {
-                $stmt = $conn->prepare("DELETE FROM visit_items WHERE item_id=? AND is_done=0");
-                $stmt->bind_param('i', $item['item_id']);
-                $stmt->execute();
-                $stmt->close();
-            }
-        }
-
-        // Add new items
-        for ($i = 1; $i <= 5; $i++) {
-            $desc = trim($_POST['item_new_' . $i] ?? '');
-            if ($desc !== '') {
-                $max_sort++;
-                $stmt = $conn->prepare("INSERT INTO visit_items (visit_id, item_description, sort_order) VALUES (?,?,?)");
-                $stmt->bind_param('isi', $visit_id, $desc, $max_sort);
-                $stmt->execute();
-                $stmt->close();
-            }
-        }
-
         $message  = "Visit updated.";
         $msg_type = 'alert-success';
 
         // Reload everything
-        $items = load_items($conn, $visit_id);
         [$sites, $techs] = load_dropdowns($conn);
         $stmt = $conn->prepare("SELECT v.*, s.site_name FROM visits v JOIN sites s ON s.site_id = v.site_id WHERE v.visit_id = ?");
         $stmt->bind_param('i', $visit_id);
@@ -112,12 +71,6 @@ include 'incl/header.php';
             <h1>Edit Visit — <?php echo htmlspecialchars($visit['site_name']); ?></h1>
             <a href='visit_detail.php?visit_id=<?php echo $visit_id; ?>' class='btn btn-secondary'>&larr; Back</a>
         </div>
-
-        <?php if ($visit['status'] === 'in_progress'): ?>
-            <div class='alert alert-error' style='background:#fff8e1;color:#856404;border-color:#ffc107;'>
-                This visit is in progress — completed items cannot be changed.
-            </div>
-        <?php endif; ?>
 
         <?php if ($message): ?>
             <div class='alert <?php echo $msg_type; ?>'><?php echo $message; ?></div>
@@ -168,33 +121,6 @@ include 'incl/header.php';
                 <label>Scheduled Date</label>
                 <input type='date' name='scheduled_date' value='<?php echo htmlspecialchars($visit['scheduled_date'] ?? ''); ?>'>
             </div>
-
-            <hr style='margin:24px 0;border:none;border-top:1px solid #eef0f4;'>
-            <h3 style='margin-bottom:16px;font-size:15px;color:#1a3a5c;'>Checklist Items</h3>
-
-            <?php foreach ($items as $item): ?>
-                <?php if ($item['is_done']): ?>
-                    <div class='form-group'>
-                        <label style='color:#aaa;'>
-                            &#10003; <?php echo htmlspecialchars($item['item_description']); ?>
-                            <span style='font-weight:400;font-size:11px;'>(completed — cannot edit)</span>
-                        </label>
-                    </div>
-                <?php else: ?>
-                    <div class='form-group'>
-                        <label>Item (leave blank to remove)</label>
-                        <input type='text' name='item_existing_<?php echo $item['item_id']; ?>'
-                               value='<?php echo htmlspecialchars($item['item_description']); ?>'>
-                    </div>
-                <?php endif; ?>
-            <?php endforeach; ?>
-
-            <p style='font-size:13px;color:#888;margin:16px 0 8px;'>Add new items:</p>
-            <?php for ($i = 1; $i <= 5; $i++): ?>
-                <div class='form-group'>
-                    <input type='text' name='item_new_<?php echo $i; ?>' placeholder='New item <?php echo $i; ?>'>
-                </div>
-            <?php endfor; ?>
 
             <input type='submit' value='Save Changes' class='btn btn-primary'>
             &nbsp;

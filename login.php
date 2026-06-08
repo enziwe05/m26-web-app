@@ -1,10 +1,17 @@
 <?php
 require_once 'incl/dbconn.php';
 
+// Where each role lands after login
+function home_for_role(string $role): string {
+    if ($role === 'employee') return 'employee_dashboard.php';
+    if ($role === 'client')   return 'client_dashboard.php';
+    return 'admin_dashboard.php';   // admin & supervisor
+}
+
 // Already logged in — send to the right dashboard.
 $role = current_user_role();
 if ($role !== '') {
-    header('Location: ' . ($role === 'employee' ? 'employee_dashboard.php' : 'admin_dashboard.php'));
+    header('Location: ' . home_for_role($role));
     exit;
 }
 
@@ -15,7 +22,7 @@ if (isset($_POST['username'])) {
     $username = $_POST['username'] ?? '';
     $password = $_POST['password'] ?? '';
 
-    $stmt = $conn->prepare("SELECT user_id, first_name, last_name, password_hash, role FROM users WHERE username = ? AND status != 'inactive'");
+    $stmt = $conn->prepare("SELECT user_id, first_name, last_name, password_hash, role, client_id FROM users WHERE username = ? AND status != 'inactive'");
     $stmt->bind_param('s', $username);
     $stmt->execute();
     $user = $stmt->get_result()->fetch_assoc();
@@ -26,6 +33,7 @@ if (isset($_POST['username'])) {
         $_SESSION['user_id']   = (int) $user['user_id'];
         $_SESSION['user_name'] = $user['first_name'] . ' ' . $user['last_name'];
         $_SESSION['user_role'] = $user['role'];
+        $_SESSION['client_id'] = $user['client_id'] !== null ? (int) $user['client_id'] : null;
 
         // "Keep me logged in" → extend the session cookie to 7 days
         if (isset($_POST['remember']) && $_POST['remember'] === '1') {
@@ -33,7 +41,7 @@ if (isset($_POST['username'])) {
             setcookie(session_name(), session_id(), time() + 604800, $p['path'], $p['domain'], $p['secure'], true);
         }
 
-        header('Location: ' . (in_array($user['role'], ['admin', 'supervisor'], true) ? 'admin_dashboard.php' : 'employee_dashboard.php'));
+        header('Location: ' . home_for_role($user['role']));
         exit;
     }
     $error = "Invalid username or password.";

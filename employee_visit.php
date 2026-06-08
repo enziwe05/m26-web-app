@@ -49,28 +49,6 @@ $stmt->close();
 
 $is_completed = ($visit['status'] == 'completed');
 
-// Load checklist items + their before/after photos
-$stmt = $conn->prepare("SELECT item_id, item_description, is_done, completed_at FROM visit_items WHERE visit_id = ? ORDER BY sort_order");
-$stmt->bind_param('i', $visit_id);
-$stmt->execute();
-$items = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
-$stmt->close();
-
-$item_photos = [];
-$stmt = $conn->prepare("SELECT item_id, photo_filename, photo_type FROM visit_photos WHERE visit_id = ? AND item_id IS NOT NULL ORDER BY photo_type");
-$stmt->bind_param('i', $visit_id);
-$stmt->execute();
-$res = $stmt->get_result();
-while ($p = $res->fetch_assoc()) {
-    $item_photos[$p['item_id']][] = $p;
-}
-$stmt->close();
-
-$done_count = 0;
-foreach ($items as $it) {
-    if ($it['is_done']) $done_count++;
-}
-
 // Section definitions — each key maps to a human label
 $form_sections = require __DIR__ . "/incl/form_sections.php";
 
@@ -112,44 +90,6 @@ include 'incl/header.php';
             <p><strong>Scheduled:</strong> <?php echo htmlspecialchars($visit['scheduled_date']); ?></p>
             <?php endif; ?>
         </div>
-
-        <!-- Checklist Items (the per-task work, with before/after photos) -->
-        <?php if (!empty($items)): ?>
-        <div class='mf-section card'>
-            <h2>Checklist Items
-                <span style='font-weight:400; font-size:12px; color:#888;'>(<?php echo $done_count; ?>/<?php echo count($items); ?> done)</span>
-            </h2>
-            <?php foreach ($items as $it): ?>
-            <div class='item-row'>
-                <?php if ($it['is_done']): ?>
-                    <span class='item-done-icon'>&#10003;</span>
-                <?php else: ?>
-                    <span class='item-pending-icon'>&#9675;</span>
-                <?php endif; ?>
-                <span class='item-desc'><?php echo htmlspecialchars($it['item_description']); ?></span>
-                <?php if ($it['is_done']): ?>
-                    <span class='item-meta'>Done <?php echo fmt_datetime($it['completed_at']); ?></span>
-                <?php elseif (!$is_completed): ?>
-                    <a href='complete_item.php?item_id=<?php echo $it['item_id']; ?>&visit_id=<?php echo $visit_id; ?>'
-                       class='btn btn-secondary' style='font-size:12px; padding:4px 12px;'>Complete</a>
-                <?php else: ?>
-                    <span class='item-meta'>Pending</span>
-                <?php endif; ?>
-            </div>
-            <?php if (!empty($item_photos[$it['item_id']])): ?>
-            <div class='photo-pair'>
-                <?php foreach ($item_photos[$it['item_id']] as $ph): ?>
-                <div>
-                    <img src='uploads/<?php echo htmlspecialchars($ph['photo_filename']); ?>'
-                         alt='<?php echo htmlspecialchars($ph['photo_type']); ?>'>
-                    <div class='photo-label'><?php echo ucfirst($ph['photo_type']); ?></div>
-                </div>
-                <?php endforeach; ?>
-            </div>
-            <?php endif; ?>
-            <?php endforeach; ?>
-        </div>
-        <?php endif; ?>
 
         <?php if ($is_locked): ?>
         <!-- ===================== READ-ONLY COMPLETED VIEW ===================== -->

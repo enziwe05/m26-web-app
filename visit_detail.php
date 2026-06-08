@@ -56,16 +56,6 @@ $tech_name     = trim($visit['tech_first'] . ' ' . $visit['tech_last']);
 $events = [];
 $events[] = ['t' => $visit['created_at'], 'title' => 'Visit created', 'by' => $creator_name];
 
-// each completed checklist task (these can span several days)
-$stmt = $conn->prepare("SELECT item_description, completed_at FROM visit_items WHERE visit_id = ? AND is_done = 1 AND completed_at IS NOT NULL ORDER BY completed_at");
-$stmt->bind_param('i', $visit_id);
-$stmt->execute();
-$res = $stmt->get_result();
-while ($r = $res->fetch_assoc()) {
-    $events[] = ['t' => $r['completed_at'], 'title' => 'Completed task: ' . $r['item_description'], 'by' => $tech_name];
-}
-$stmt->close();
-
 // maintenance report saves / submission
 if ($mform) {
     if (!empty($mform['is_submitted']) && !empty($mform['submitted_at'])) {
@@ -77,38 +67,6 @@ if ($mform) {
 
 // newest first, so the most recent activity is at the top
 usort($events, fn($a, $b) => strcmp($b['t'], $a['t']));
-
-// Items for this visit
-$stmt = $conn->prepare("
-    SELECT i.item_id, i.item_description, i.is_done, i.completed_at
-    FROM visit_items i
-    WHERE i.visit_id = ?
-    ORDER BY i.sort_order
-");
-$stmt->bind_param('i', $visit_id);
-$stmt->execute();
-$items = $stmt->get_result();
-$stmt->close();
-
-// Photos grouped by item
-$stmt = $conn->prepare("
-    SELECT p.item_id, p.photo_filename, p.photo_type, p.uploaded_at,
-           u.first_name, u.last_name
-    FROM visit_photos p
-    JOIN users u ON u.user_id = p.uploaded_by_user_id
-    WHERE p.visit_id = ?
-    ORDER BY p.item_id, p.photo_type
-");
-$stmt->bind_param('i', $visit_id);
-$stmt->execute();
-$photos_result = $stmt->get_result();
-$stmt->close();
-
-// Index photos by item_id
-$photos = array();
-while ($p = $photos_result->fetch_assoc()) {
-    $photos[$p['item_id']][] = $p;
-}
 
 $badge = $visit['status'] == 'in_progress' ? 'in-progress' : $visit['status'];
 $label = str_replace('_', ' ', $visit['status']);
@@ -191,42 +149,6 @@ include 'incl/header.php';
                 </div>
             <?php endif; ?>
         </div>
-
-        <h2>Items</h2>
-
-        <?php
-        while ($item = $items->fetch_assoc()) {
-            $done_class = $item['is_done'] ? 'item-done' : 'item-pending';
-            echo "<div class='card' style='margin-bottom:14px;'>";
-            echo "<div class='item-row'>";
-            if ($item['is_done']) {
-                echo "<span class='item-done-icon'>&#10003;</span>";
-            } else {
-                echo "<span class='item-pending-icon'>&#9675;</span>";
-            }
-            echo "<span class='item-desc'>" . htmlspecialchars($item['item_description']) . "</span>";
-            if ($item['is_done']) {
-                echo "<span class='item-meta'>Done " . fmt_datetime($item['completed_at']) . "</span>";
-            } else {
-                echo "<span class='item-meta'>Pending</span>";
-            }
-            echo "</div>";
-
-            // Photos for this item
-            if (isset($photos[$item['item_id']])) {
-                echo "<div class='photo-pair'>";
-                foreach ($photos[$item['item_id']] as $photo) {
-                    echo "<div>";
-                    echo "<img src='uploads/" . htmlspecialchars($photo['photo_filename']) . "' alt='" . $photo['photo_type'] . "'>";
-                    echo "<div class='photo-label'>" . ucfirst($photo['photo_type']) . " &mdash; " . htmlspecialchars($photo['first_name']) . "</div>";
-                    echo "</div>";
-                }
-                echo "</div>";
-            }
-
-            echo "</div>";
-        }
-        ?>
 
         <br>
         <p>

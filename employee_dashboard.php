@@ -5,9 +5,7 @@ require_employee();
 $user_id = current_user_id();
 
 $stmt = $conn->prepare("
-    SELECT v.visit_id, s.site_code, s.site_name, v.visit_type, v.status, v.scheduled_date,
-           (SELECT COUNT(*) FROM visit_items WHERE visit_id = v.visit_id) AS total_items,
-           (SELECT COUNT(*) FROM visit_items WHERE visit_id = v.visit_id AND is_done = 1) AS done_items
+    SELECT v.visit_id, s.site_code, s.site_name, v.visit_type, v.status, v.scheduled_date
     FROM visits v
     JOIN sites s ON s.site_id = v.site_id
     WHERE v.assigned_to_user_id = ?
@@ -30,16 +28,14 @@ while ($row = $result->fetch_assoc()) {
 
 function render_table(array $rows): void {
     echo "<table class='data-table'>";
-    echo "<tr><th>Site</th><th>Type</th><th>Scheduled</th><th>Progress</th><th>Status</th><th></th></tr>";
+    echo "<tr><th>Site</th><th>Type</th><th>Scheduled</th><th>Status</th><th></th></tr>";
     foreach ($rows as $row) {
         $badge    = $row['status'] === 'in_progress' ? 'in-progress' : $row['status'];
         $label    = str_replace('_', ' ', $row['status']);
-        $progress = $row['done_items'] . '/' . $row['total_items'];
         echo "<tr>";
         echo "<td>" . htmlspecialchars($row['site_name']) . "</td>";
         echo "<td>" . htmlspecialchars($row['visit_type']) . "</td>";
         echo "<td>" . fmt_date($row['scheduled_date']) . "</td>";
-        echo "<td>" . $progress . "</td>";
         echo "<td><span class='badge badge-$badge'>$label</span></td>";
         echo "<td><a href='employee_visit.php?visit_id=" . $row['visit_id'] . "'>Open</a></td>";
         echo "</tr>";

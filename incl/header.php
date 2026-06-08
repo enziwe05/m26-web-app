@@ -18,7 +18,7 @@ $extra_head = $extra_head ?? '';
     <meta name='viewport' content='width=device-width, initial-scale=1.0'>
     <title><?php echo htmlspecialchars($page_title); ?></title>
     <link rel='icon' href='images/m26.png' type='image/png'>
-    <link rel='stylesheet' href='css/styles.css?v=13'/>
+    <link rel='stylesheet' href='css/styles.css?v=16'/>
     <?php echo $extra_head; ?>
 </head>
 <body>
