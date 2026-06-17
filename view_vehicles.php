@@ -41,7 +41,12 @@ include 'incl/header.php';
 
         <?php
         if (!$result || $result->num_rows == 0) {
-            echo "<p>No vehicles yet." . (is_admin() ? " <a href='add_vehicle.php'>Add the first one.</a>" : "") . "</p>";
+            echo empty_state(
+                'No vehicles yet',
+                'Add your company vehicles here, then drivers can run their daily checks.',
+                is_admin() ? 'add_vehicle.php' : '',
+                is_admin() ? '+ Add Vehicle' : ''
+            );
         } else {
             echo "<div class='table-scroll'><table class='data-table'>";
             echo "<tr><th>Registration</th><th>Make</th><th>Fleet #</th><th>Last Check</th><th>Status</th><th></th></tr>";

@@ -10,7 +10,7 @@ if (!$client) {
 $site_id = (int)($_GET['site_id'] ?? 0);
 
 // Scope check: the site must belong to this client's company
-$f      = client_notes_filter($client['match_keyword'], 'notes');
+$f      = client_site_filter($client['match_keyword'], '');
 $params = array_merge([$site_id], $f['params']);
 $types  = 'i' . str_repeat('s', count($f['params']));
 $stmt = $conn->prepare("SELECT * FROM sites WHERE site_id = ? AND " . $f['cond']);
@@ -66,14 +66,11 @@ include 'incl/header.php';
         <?php else: ?>
             <div class='table-scroll'><table class='data-table'>
                 <tr><th>Type</th><th>Scheduled</th><th>Status</th><th>Completed</th><th></th></tr>
-                <?php while ($v = $visits->fetch_assoc()):
-                    $badge = $v['status'] == 'in_progress' ? 'in-progress' : $v['status'];
-                    $label = str_replace('_', ' ', $v['status']);
-                ?>
+                <?php while ($v = $visits->fetch_assoc()): ?>
                 <tr>
                     <td><?php echo htmlspecialchars($v['visit_type']); ?></td>
                     <td><?php echo fmt_date($v['scheduled_date']); ?></td>
-                    <td><span class='badge badge-<?php echo $badge; ?>'><?php echo $label; ?></span></td>
+                    <td><?php echo status_badge($v['status']); ?></td>
                     <td><?php echo $v['completed_at'] ? fmt_datetime($v['completed_at']) : '—'; ?></td>
                     <td>
                         <?php if ($v['has_report']): ?>

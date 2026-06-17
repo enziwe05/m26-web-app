@@ -35,6 +35,8 @@ return [
         'label' => 'Generator Inspection',
         'fields' => [
             'generator_status'        => 'Generator Status',
+            'fuel_level'              => 'Fuel Level',
+            'running_hours'           => 'Running Hours',
             'condition_batteries'     => 'Condition of Batteries',
             'electrolyte_condition'   => 'Electrolyte Condition',
             'battery_terminals'       => 'Battery Terminals',

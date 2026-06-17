@@ -32,6 +32,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['confirm'])) {
         $stmt->bind_param('i', $user_id);
         $stmt->execute();
         $stmt->close();
+        flash('Employee deleted.');
         header('Location: view_employees.php');
         exit;
     }

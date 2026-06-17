@@ -21,30 +21,38 @@ if (isset($_POST['username'])) {
     csrf_check();
     $username = $_POST['username'] ?? '';
     $password = $_POST['password'] ?? '';
+    $ip       = $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0';
 
-    $stmt = $conn->prepare("SELECT user_id, first_name, last_name, password_hash, role, client_id FROM users WHERE username = ? AND status != 'inactive'");
-    $stmt->bind_param('s', $username);
-    $stmt->execute();
-    $user = $stmt->get_result()->fetch_assoc();
-    $stmt->close();
+    if (login_is_blocked($conn, $ip)) {
+        $error = "Too many failed attempts. Please wait " . LOGIN_WINDOW_MINS . " minutes and try again.";
+    } else {
+        $stmt = $conn->prepare("SELECT user_id, first_name, last_name, password_hash, role, client_id FROM users WHERE username = ? AND status != 'inactive'");
+        $stmt->bind_param('s', $username);
+        $stmt->execute();
+        $user = $stmt->get_result()->fetch_assoc();
+        $stmt->close();
 
-    if ($user && password_verify($password, $user['password_hash'])) {
-        session_regenerate_id(true);   // new session id on login (prevents fixation)
-        $_SESSION['user_id']   = (int) $user['user_id'];
-        $_SESSION['user_name'] = $user['first_name'] . ' ' . $user['last_name'];
-        $_SESSION['user_role'] = $user['role'];
-        $_SESSION['client_id'] = $user['client_id'] !== null ? (int) $user['client_id'] : null;
+        if ($user && password_verify($password, $user['password_hash'])) {
+            login_clear_failures($conn, $ip);
+            session_regenerate_id(true);   // new session id on login (prevents fixation)
+            $_SESSION['user_id']   = (int) $user['user_id'];
+            $_SESSION['user_name'] = $user['first_name'] . ' ' . $user['last_name'];
+            $_SESSION['user_role'] = $user['role'];
+            $_SESSION['client_id'] = $user['client_id'] !== null ? (int) $user['client_id'] : null;
 
-        // "Keep me logged in" → extend the session cookie to 7 days
-        if (isset($_POST['remember']) && $_POST['remember'] === '1') {
-            $p = session_get_cookie_params();
-            setcookie(session_name(), session_id(), time() + 604800, $p['path'], $p['domain'], $p['secure'], true);
+            // "Keep me logged in" → extend the session cookie to 7 days
+            if (isset($_POST['remember']) && $_POST['remember'] === '1') {
+                $p = session_get_cookie_params();
+                setcookie(session_name(), session_id(), time() + 604800, $p['path'], $p['domain'], $p['secure'], true);
+            }
+
+            header('Location: ' . home_for_role($user['role']));
+            exit;
         }
 
-        header('Location: ' . home_for_role($user['role']));
-        exit;
+        login_record_failure($conn, $ip, $username);
+        $error = "Invalid username or password.";
     }
-    $error = "Invalid username or password.";
 }
 ?>
 <!DOCTYPE html>

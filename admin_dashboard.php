@@ -57,14 +57,12 @@ include 'incl/header.php';
             echo "<table class='data-table'>";
             echo "<tr><th>Site</th><th>Type</th><th>Tech</th><th>Scheduled</th><th>Status</th><th></th></tr>";
             while ($row = $recent->fetch_assoc()) {
-                $badge = $row['status'] == 'in_progress' ? 'in-progress' : $row['status'];
-                $label = str_replace('_', ' ', $row['status']);
                 echo "<tr>";
                 echo "<td>" . htmlspecialchars($row['site_name']) . "</td>";
                 echo "<td>" . htmlspecialchars($row['visit_type']) . "</td>";
                 echo "<td>" . htmlspecialchars($row['first_name'] . ' ' . $row['last_name']) . "</td>";
                 echo "<td>" . fmt_date($row['scheduled_date']) . "</td>";
-                echo "<td><span class='badge badge-$badge'>$label</span></td>";
+                echo "<td>" . status_badge($row['status']) . "</td>";
                 echo "<td><a href='visit_detail.php?visit_id=" . $row['visit_id'] . "'>View</a></td>";
                 echo "</tr>";
             }

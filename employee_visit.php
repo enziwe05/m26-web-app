@@ -73,9 +73,7 @@ include 'incl/header.php';
 
         <div class='page-heading'>
             <h1><?php echo htmlspecialchars($visit['site_name']); ?></h1>
-            <span class='badge badge-<?php echo $visit['status'] == 'in_progress' ? 'in-progress' : $visit['status']; ?>'>
-                <?php echo str_replace('_', ' ', $visit['status']); ?>
-            </span>
+<?php echo status_badge($visit['status']); ?>
             <span class='badge-mtype' style='<?php echo $mtype_badge; ?>'><?php echo $mtype_label; ?></span>
         </div>
 

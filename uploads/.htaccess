@@ -1,0 +1,7 @@
+# Defense in depth: never run scripts from the uploads directory.
+# Even if a disguised script were uploaded, it can only be downloaded, not executed.
+php_flag engine off
+
+<FilesMatch "\.(php|php3|php4|php5|php7|phtml|phar|pl|py|cgi|sh|asp|aspx)$">
+    Require all denied
+</FilesMatch>

@@ -76,6 +76,7 @@ include 'incl/header.php';
             <h1>All Visits</h1>
             <a href='create_visit.php' class='btn btn-primary'>+ Create Visit</a>
         </div>
+        <p class='page-intro'>Maintenance visits across all sites. Filter by status or technician, then open one for its report.</p>
 
         <form method='GET' action='view_visits.php' class='filter-bar'>
             <select name='status'>
@@ -99,21 +100,19 @@ include 'incl/header.php';
 
         <?php
         if ($result->num_rows == 0) {
-            echo "<p>No visits found.</p>";
+            echo empty_state('No visits found', 'Try clearing the filters above, or schedule a new site visit.', 'create_visit.php', '+ Create Visit');
         } else {
             echo "<p style='font-size:13px; color:#888; margin-bottom:10px;'>Showing " . ($offset + 1) . "–" . ($offset + $result->num_rows) . " of $total visits</p>";
             echo "<div class='table-scroll'>";
             echo "<table class='data-table'>";
             echo "<tr><th>Site</th><th>Type</th><th>Tech</th><th>Scheduled</th><th>Status</th><th></th></tr>";
             while ($row = $result->fetch_assoc()) {
-                $badge    = $row['status'] == 'in_progress' ? 'in-progress' : $row['status'];
-                $label    = str_replace('_', ' ', $row['status']);
                 echo "<tr>";
                 echo "<td>" . htmlspecialchars($row['site_name']) . "</td>";
                 echo "<td>" . htmlspecialchars($row['visit_type']) . "</td>";
                 echo "<td>" . htmlspecialchars($row['first_name'] . ' ' . $row['last_name']) . "</td>";
                 echo "<td>" . fmt_date($row['scheduled_date']) . "</td>";
-                echo "<td><span class='badge badge-$badge'>$label</span></td>";
+                echo "<td>" . status_badge($row['status']) . "</td>";
                 echo "<td><a href='visit_detail.php?visit_id=" . $row['visit_id'] . "'>View</a></td>";
                 echo "</tr>";
             }

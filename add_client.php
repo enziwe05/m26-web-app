@@ -53,6 +53,7 @@ if (isset($_POST['name']) && !isset($_POST['preview_only'])) {
             $stmt->execute();
             $stmt->close();
 
+            flash('Client and portal login created.');
             header('Location: view_clients.php');
             exit;
         }

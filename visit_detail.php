@@ -26,8 +26,7 @@ $visit = $stmt->get_result()->fetch_assoc();
 $stmt->close();
 
 if (!$visit) {
-    echo "Visit not found. <a href='view_visits.php'>Back to visits</a>";
-    exit;
+    error_page('Visit not found', 'That visit may have been deleted or the link is wrong.', 'view_visits.php', 'Back to visits');
 }
 
 // Has the technician submitted the inspection form? Count any faulty items.
@@ -68,8 +67,6 @@ if ($mform) {
 // newest first, so the most recent activity is at the top
 usort($events, fn($a, $b) => strcmp($b['t'], $a['t']));
 
-$badge = $visit['status'] == 'in_progress' ? 'in-progress' : $visit['status'];
-$label = str_replace('_', ' ', $visit['status']);
 $page_title = 'M26 | Visit #' . $visit_id;
 include 'incl/header.php';
 ?>
@@ -77,7 +74,7 @@ include 'incl/header.php';
         <div class='page-heading'>
             <h1>Visit — <?php echo htmlspecialchars($visit['site_name']); ?></h1>
             <div style='display:flex;gap:8px;align-items:center;'>
-                <span class='badge badge-<?php echo $badge; ?>'><?php echo $label; ?></span>
+<?php echo status_badge($visit['status']); ?>
                 <?php if ($visit['status'] !== 'completed'): ?>
                     <a href='edit_visit.php?visit_id=<?php echo $visit_id; ?>' class='btn btn-secondary' style='font-size:13px;padding:5px 14px;'>Edit</a>
                 <?php endif; ?>
@@ -115,6 +112,8 @@ include 'incl/header.php';
                     &nbsp;·&nbsp; <?php echo $fault_note; ?>
                 </p>
                 <a href='maintenance_form.php?visit_id=<?php echo $visit_id; ?>' class='btn btn-primary'>View Full Report</a>
+                &nbsp;
+                <a href='report_print.php?visit_id=<?php echo $visit_id; ?>' target='_blank' class='btn btn-secondary'>Save as PDF</a>
             <?php elseif ($mform): ?>
                 <p style='margin-bottom:12px;'>
                     <span class='badge badge-in-progress'>In progress</span>

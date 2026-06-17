@@ -72,6 +72,7 @@ include 'incl/header.php';
         <div class='page-heading'>
             <h1>Faults &amp; Issues</h1>
         </div>
+        <p class='page-intro'>Every item technicians flagged as faulty, newest first — so you can action open problems across all sites.</p>
 
         <div class='stat-row'>
             <div class='stat-box'>
@@ -85,7 +86,7 @@ include 'incl/header.php';
         </div>
 
         <?php if (empty($rows)): ?>
-            <div class='card'>No faults or issue notes reported. All submitted forms are clean.</div>
+            <?php echo empty_state('No faults flagged', 'Great news — every submitted maintenance report is clean.'); ?>
         <?php else: ?>
             <?php foreach ($rows as $r): ?>
             <div class='card'>

@@ -12,7 +12,7 @@ if (!$client) {
 }
 
 // All scoping is by the client's company matched against sites.notes
-$f      = client_notes_filter($client['match_keyword'], 's.notes');
+$f      = client_site_filter($client['match_keyword'], 's');
 $cond   = $f['cond'];
 $params = $f['params'];
 $types  = str_repeat('s', count($params));
@@ -102,14 +102,11 @@ include 'incl/header.php';
         <?php else: ?>
             <div class='card card-table'><table class='data-table'>
                 <tr><th>Site</th><th>Scheduled</th><th>Status</th><th></th></tr>
-                <?php while ($r = $recent->fetch_assoc()):
-                    $badge = $r['status'] == 'in_progress' ? 'in-progress' : $r['status'];
-                    $label = str_replace('_', ' ', $r['status']);
-                ?>
+                <?php while ($r = $recent->fetch_assoc()): ?>
                 <tr>
                     <td><?php echo htmlspecialchars($r['site_name']); ?></td>
                     <td><?php echo fmt_date($r['scheduled_date']); ?></td>
-                    <td><span class='badge badge-<?php echo $badge; ?>'><?php echo $label; ?></span></td>
+                    <td><?php echo status_badge($r['status']); ?></td>
                     <td><a href='client_site_detail.php?site_id=<?php echo $r['site_id']; ?>'>Open &rarr;</a></td>
                 </tr>
                 <?php endwhile; ?>

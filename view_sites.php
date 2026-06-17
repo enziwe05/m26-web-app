@@ -74,6 +74,7 @@ include 'incl/header.php';
             <h1>Sites</h1>
             <a href='add_site.php' class='btn btn-primary'>+ Add Site</a>
         </div>
+        <p class='page-intro'>All M26-maintained sites. Open a site for its visit history, documents and operator.</p>
 
         <form method='GET' action='view_sites.php' class='filter-bar'>
             <input type='text' name='search' placeholder='Search site code, name or location...'
@@ -92,7 +93,7 @@ include 'incl/header.php';
 
         <?php
         if ($result->num_rows == 0) {
-            echo "<p>No sites found.</p>";
+            echo empty_state('No sites found', 'No sites match your search or filters.', 'add_site.php', '+ Add Site');
         } else {
             $showing_from = $offset + 1;
             $showing_to   = $offset + $result->num_rows;

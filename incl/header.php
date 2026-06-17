@@ -18,10 +18,11 @@ $extra_head = $extra_head ?? '';
     <meta name='viewport' content='width=device-width, initial-scale=1.0'>
     <title><?php echo htmlspecialchars($page_title); ?></title>
     <link rel='icon' href='images/m26.png' type='image/png'>
-    <link rel='stylesheet' href='css/styles.css?v=16'/>
+    <link rel='stylesheet' href='css/styles.css?v=21'/>
     <?php echo $extra_head; ?>
 </head>
 <body>
 <div class='page-wrapper'>
     <?php include_once __DIR__ . '/sidebar.php'; ?>
     <div class='main-content'>
+    <?php $__flash = flash_get(); if ($__flash !== '') echo "<div class='alert alert-success'>&#10003; " . htmlspecialchars($__flash) . "</div>"; ?>

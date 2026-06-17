@@ -29,5 +29,6 @@ if ($doc) {
     $stmt->close();
 }
 
+flash('Document deleted.');
 header('Location: site_detail.php?site_id=' . $site_id);
 exit;

@@ -43,12 +43,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['confirm'])) {
     $stmt->execute();
     $stmt->close();
 
+    flash('Visit deleted.');
     header('Location: view_visits.php');
     exit;
 }
 
-$badge = $visit['status'] === 'in_progress' ? 'in-progress' : $visit['status'];
-$label = str_replace('_', ' ', $visit['status']);
 $page_title = 'M26 | Delete Visit';
 include 'incl/header.php';
 ?>
@@ -65,7 +64,7 @@ include 'incl/header.php';
                 <tr><th>Type</th><td><?php echo htmlspecialchars($visit['visit_type']); ?></td></tr>
                 <tr><th>Assigned to</th><td><?php echo htmlspecialchars($visit['first_name'] . ' ' . $visit['last_name']); ?></td></tr>
                 <tr><th>Scheduled</th><td><?php echo fmt_date($visit['scheduled_date']); ?></td></tr>
-                <tr><th>Status</th><td><span class='badge badge-<?php echo $badge; ?>'><?php echo $label; ?></span></td></tr>
+                <tr><th>Status</th><td><?php echo status_badge($visit['status']); ?></td></tr>
                 <tr><th>Photos</th><td><?php echo $photo_count; ?></td></tr>
             </table>
 

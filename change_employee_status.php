@@ -17,5 +17,6 @@ $stmt->bind_param('si', $status, $user_id);
 $stmt->execute();
 $stmt->close();
 
+flash('Employee status updated.');
 header('Location: view_employees.php');
 exit;

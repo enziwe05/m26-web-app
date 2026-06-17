@@ -14,7 +14,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     csrf_check();
     $site_id          = (int)($_POST['site_id'] ?? 0);
     $assigned_to      = (int)($_POST['assigned_to_user_id'] ?? 0);
-    $visit_type       = '';   // visit type no longer captured on creation
+    $visit_type       = in_array($_POST['visit_type'] ?? '', visit_types(), true)
+                        ? $_POST['visit_type'] : 'Maintenance';
     $description      = trim($_POST['description'] ?? '');
     $scheduled_date   = ($_POST['scheduled_date'] ?? '') !== '' ? $_POST['scheduled_date'] : null;
     $created_by       = current_user_id();
@@ -46,6 +47,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $stmt->execute();
             $visit_id = $stmt->insert_id;
             $stmt->close();
+            flash('Visit created.');
             header('Location: visit_detail.php?visit_id=' . $visit_id);
             exit;
         } catch (mysqli_sql_exception $e) {
@@ -80,6 +82,17 @@ include 'incl/header.php';
                         echo "<option value='" . $s['site_id'] . "' $sel>" . htmlspecialchars($s['site_name']) . "</option>";
                     }
                     ?>
+                </select>
+            </div>
+
+            <div class='form-group'>
+                <label>Visit Type *</label>
+                <select name='visit_type'>
+                    <?php foreach (visit_types() as $vt): ?>
+                        <option value='<?php echo htmlspecialchars($vt); ?>'<?php echo (($_POST['visit_type'] ?? '') === $vt) ? ' selected' : ''; ?>>
+                            <?php echo htmlspecialchars($vt); ?>
+                        </option>
+                    <?php endforeach; ?>
                 </select>
             </div>
 

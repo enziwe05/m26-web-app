@@ -8,9 +8,26 @@ $today      = date('Y-m-d');
 $vehicle_id = (int)($_GET['vehicle_id'] ?? 0);
 
 // Active vehicles to choose from
-$vehicles = $conn->query("SELECT vehicle_id, registration, make, fleet_number FROM vehicles WHERE status = 'active' ORDER BY registration");
+$vehicles = $conn->query("SELECT vehicle_id, registration, make, fleet_number FROM vehicles WHERE status = 'active' ORDER BY registration")
+                 ->fetch_all(MYSQLI_ASSOC);
 
-// If a vehicle is already chosen, load today's inspection (so they can edit/continue)
+// Which vehicles already have a check logged today (shown in the list)
+$checked_today = [];
+$res = $conn->prepare("SELECT vehicle_id FROM vehicle_inspections WHERE inspection_date = ?");
+$res->bind_param('s', $today);
+$res->execute();
+$rs = $res->get_result();
+while ($r = $rs->fetch_assoc()) $checked_today[(int)$r['vehicle_id']] = true;
+$res->close();
+
+// Resolve the chosen vehicle (ignore an unknown id)
+$selected = null;
+foreach ($vehicles as $v) {
+    if ((int)$v['vehicle_id'] === $vehicle_id) { $selected = $v; break; }
+}
+if (!$selected) $vehicle_id = 0;
+
+// If a vehicle is chosen, load today's inspection (so they can edit/continue)
 $existing = null;
 $decoded  = [];
 if ($vehicle_id > 0) {
@@ -33,36 +50,41 @@ include 'incl/header.php';
             <span><?php echo fmt_date($today); ?></span>
         </div>
 
-        <p class='page-intro'>
-            Inspect your vehicle before leaving the office. Pick the vehicle, then mark each item.
-        </p>
-
         <?php if (isset($_GET['saved'])): ?>
-        <div class='alert alert-success'>Inspection saved. Safe travels!</div>
+        <div class='alert alert-success'>&#10003; Inspection saved. Safe travels!</div>
         <?php endif; ?>
 
-        <!-- Step 1: pick a vehicle (reloads to preload any check already done today) -->
-        <div class='card'>
-            <form method='GET' action='vehicle_inspection.php' class='filter-bar' style='margin-bottom:0;'>
-                <div style='flex:1; min-width:200px;'>
-                    <label>Vehicle</label>
-                    <select name='vehicle_id' onchange='this.form.submit()'>
-                        <option value=''>-- Select a vehicle --</option>
-                        <?php while ($v = $vehicles->fetch_assoc()):
-                            $lbl = $v['registration'] . ($v['make'] ? ' — ' . $v['make'] : '');
-                        ?>
-                        <option value='<?php echo $v['vehicle_id']; ?>'<?php echo $v['vehicle_id'] == $vehicle_id ? ' selected' : ''; ?>>
-                            <?php echo htmlspecialchars($lbl); ?>
-                        </option>
-                        <?php endwhile; ?>
-                    </select>
-                </div>
-            </form>
-        </div>
-
         <?php if ($vehicle_id <= 0): ?>
-            <p style='color:#888;'>Select a vehicle above to start its daily check.</p>
+        <!-- Step 1: choose a car from the list -->
+        <p class='page-intro'>Choose your vehicle from the list, then inspect it before leaving the office.</p>
+
+        <?php if (empty($vehicles)): ?>
+            <?php echo empty_state('No vehicles available', 'Ask the office to add a vehicle before doing a check.'); ?>
         <?php else: ?>
+            <div class='card card-table'>
+            <table class='data-table'>
+                <tr><th>Vehicle</th><th>Make</th><th>Today</th><th></th></tr>
+                <?php foreach ($vehicles as $v): $done = !empty($checked_today[(int)$v['vehicle_id']]); ?>
+                <tr>
+                    <td><strong><?php echo htmlspecialchars($v['registration']); ?></strong></td>
+                    <td><?php echo htmlspecialchars($v['make'] ?: '—'); ?></td>
+                    <td><?php echo $done ? "<span style='color:#1a6b1a;'>&#10003; Checked</span>" : "<span style='color:#bbb;'>Not yet</span>"; ?></td>
+                    <td><a href='vehicle_inspection.php?vehicle_id=<?php echo $v['vehicle_id']; ?>' class='btn btn-primary' style='font-size:13px; padding:6px 16px;'>Inspect car</a></td>
+                </tr>
+                <?php endforeach; ?>
+            </table>
+            </div>
+        <?php endif; ?>
+
+        <?php else: ?>
+        <!-- Step 2: inspect the chosen vehicle -->
+        <div class='card' style='display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap;'>
+            <div>
+                <strong style='font-size:17px; color:#1a3a5c;'><?php echo htmlspecialchars($selected['registration']); ?></strong>
+                <?php if ($selected['make']): ?><span style='color:#888;'> &mdash; <?php echo htmlspecialchars($selected['make']); ?></span><?php endif; ?>
+            </div>
+            <a href='vehicle_inspection.php' class='btn btn-secondary'>&larr; Back to vehicle list</a>
+        </div>
 
             <?php if ($existing): ?>
             <div class='info-banner'>

@@ -98,7 +98,7 @@ include 'incl/header.php';
 
         <?php
         if (!$result || $result->num_rows == 0) {
-            echo "<p>No inspections found.</p>";
+            echo empty_state('No checks found', 'No vehicle inspections match these filters yet.');
         } else {
             echo "<div class='table-scroll'><table class='data-table'>";
             echo "<tr><th>Date</th><th>Vehicle</th><th>Driver</th><th>Status</th><th>Repair Request</th><th></th></tr>";

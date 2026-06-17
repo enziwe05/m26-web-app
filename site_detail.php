@@ -2,12 +2,25 @@
 require_once 'incl/dbconn.php';
 require_staff();
 
-if (!isset($_GET['site_id'])) {
+$site_id = (int)($_GET['site_id'] ?? $_POST['site_id'] ?? 0);
+if (!$site_id) {
     header('Location: view_sites.php');
     exit;
 }
 
-$site_id = $_GET['site_id'];
+// Admin can (re)assign which operator/client owns this site (fixes any mistag)
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['set_operator']) && is_admin()) {
+    csrf_check();
+    $op = ($_POST['operator'] !== '' && array_key_exists($_POST['operator'], client_companies()))
+          ? $_POST['operator'] : null;
+    $u = $conn->prepare("UPDATE sites SET operator = ? WHERE site_id = ?");
+    $u->bind_param('si', $op, $site_id);
+    $u->execute();
+    $u->close();
+    flash('Operator updated.');
+    header('Location: site_detail.php?site_id=' . $site_id);
+    exit;
+}
 
 $stmt = $conn->prepare("SELECT * FROM sites WHERE site_id = ?");
 $stmt->bind_param('i', $site_id);
@@ -16,8 +29,7 @@ $site = $stmt->get_result()->fetch_assoc();
 $stmt->close();
 
 if (!$site) {
-    echo "Site not found. <a href='view_sites.php'>Back to sites</a>";
-    exit;
+    error_page('Site not found', 'That site may have been removed or the link is wrong.', 'view_sites.php', 'Back to sites');
 }
 
 // Visit history for this site
@@ -71,6 +83,26 @@ include 'incl/header.php';
 
         <div class='card'>
             <p><strong>Region:</strong> <?php echo htmlspecialchars($site['region'] ?? '—'); ?></p>
+            <p style='display:flex; align-items:center; gap:8px; flex-wrap:wrap;'>
+                <strong>Operator / Client:</strong>
+                <?php if (is_admin()): ?>
+                <form method='POST' action='site_detail.php' style='margin:0; display:inline-flex; gap:6px;'>
+                    <?php echo csrf_field(); ?>
+                    <input type='hidden' name='site_id' value='<?php echo $site_id; ?>'>
+                    <input type='hidden' name='set_operator' value='1'>
+                    <select name='operator' onchange='this.form.submit()' style='width:auto; padding:4px 8px;'>
+                        <option value=''>— None —</option>
+                        <?php foreach (client_companies() as $key => $def): ?>
+                            <option value='<?php echo htmlspecialchars($key); ?>'<?php echo ($site['operator'] ?? '') === $key ? ' selected' : ''; ?>>
+                                <?php echo htmlspecialchars($def['label']); ?>
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+                </form>
+                <?php else: ?>
+                    <?php echo htmlspecialchars($site['operator'] ? client_company_label($site['operator']) : '—'); ?>
+                <?php endif; ?>
+            </p>
             <p><strong>Location:</strong> <?php echo htmlspecialchars($site['location'] ?? '—'); ?></p>
             <?php if ($site['latitude'] != ''): ?>
             <p><strong>Coordinates:</strong> <?php echo $site['latitude'] . ', ' . $site['longitude']; ?></p>
@@ -80,7 +112,7 @@ include 'incl/header.php';
             <?php endif; ?>
         </div>
 
-        <h2>Documents</h2>
+        <div class='section-heading'>Documents</div>
         <p><a href='upload_document.php?site_id=<?php echo $site_id; ?>' class='btn btn-secondary'>+ Upload Document</a></p>
 
         <?php
@@ -104,8 +136,7 @@ include 'incl/header.php';
         }
         ?>
 
-        <br>
-        <h2>Visit History</h2>
+        <div class='section-heading'>Visit History</div>
 
         <?php
         if ($visits->num_rows == 0) {
@@ -115,14 +146,12 @@ include 'incl/header.php';
             echo "<table class='data-table'>";
             echo "<tr><th>Type</th><th>Tech</th><th>Scheduled</th><th>Status</th><th>Completed</th><th></th></tr>";
             while ($row = $visits->fetch_assoc()) {
-                $badge = $row['status'] == 'in_progress' ? 'in-progress' : $row['status'];
-                $label = str_replace('_', ' ', $row['status']);
                 $completed = fmt_datetime($row['completed_at']);
                 echo "<tr>";
                 echo "<td>" . htmlspecialchars($row['visit_type']) . "</td>";
                 echo "<td>" . htmlspecialchars($row['first_name'] . ' ' . $row['last_name']) . "</td>";
                 echo "<td>" . fmt_date($row['scheduled_date']) . "</td>";
-                echo "<td><span class='badge badge-$badge'>$label</span></td>";
+                echo "<td>" . status_badge($row['status']) . "</td>";
                 echo "<td>" . $completed . "</td>";
                 echo "<td><a href='visit_detail.php?visit_id=" . $row['visit_id'] . "'>View</a></td>";
                 echo "</tr>";
@@ -133,29 +162,24 @@ include 'incl/header.php';
         ?>
 
         <?php if ($cells->num_rows > 0): ?>
-        <br>
-        <div class='card'>
-            <h2 style='font-size:15px; color:#1a3a5c; margin-bottom:10px;'>
-                Antenna Configuration
-                <span style='font-weight:400; font-size:12px; color:#888;'>(reference — Eswatini Mobile LTE export)</span>
-            </h2>
-            <div class='table-scroll'>
-                <table class='data-table'>
-                    <tr><th>Sector</th><th>Cell</th><th>Band</th><th>Azimuth</th><th>M-Tilt</th><th>E-Tilt</th><th>Ant. Height</th><th>Status</th></tr>
-                    <?php while ($cl = $cells->fetch_assoc()): ?>
-                    <tr>
-                        <td><?php echo htmlspecialchars($cl['sector']); ?></td>
-                        <td><?php echo htmlspecialchars($cl['cell_name']); ?></td>
-                        <td><?php echo htmlspecialchars($cl['frequency_band']); ?></td>
-                        <td><?php echo htmlspecialchars($cl['azimuth']); ?><?php echo $cl['azimuth'] !== '' ? '&deg;' : ''; ?></td>
-                        <td><?php echo htmlspecialchars($cl['mech_tilt']); ?></td>
-                        <td><?php echo htmlspecialchars($cl['e_tilt']); ?></td>
-                        <td><?php echo htmlspecialchars($cl['antenna_height']); ?><?php echo $cl['antenna_height'] !== '' ? 'm' : ''; ?></td>
-                        <td><?php echo htmlspecialchars($cl['cell_status']); ?></td>
-                    </tr>
-                    <?php endwhile; ?>
-                </table>
-            </div>
+        <hr class='section-divider'>
+        <div class='section-heading'>Antenna Configuration</div>
+        <div class='table-scroll'>
+            <table class='data-table'>
+                <tr><th>Sector</th><th>Cell</th><th>Band</th><th>Azimuth</th><th>M-Tilt</th><th>E-Tilt</th><th>Ant. Height</th><th>Status</th></tr>
+                <?php while ($cl = $cells->fetch_assoc()): ?>
+                <tr>
+                    <td><?php echo htmlspecialchars($cl['sector']); ?></td>
+                    <td><?php echo htmlspecialchars($cl['cell_name']); ?></td>
+                    <td><?php echo htmlspecialchars($cl['frequency_band']); ?></td>
+                    <td><?php echo htmlspecialchars($cl['azimuth']); ?><?php echo $cl['azimuth'] !== '' ? '&deg;' : ''; ?></td>
+                    <td><?php echo htmlspecialchars($cl['mech_tilt']); ?></td>
+                    <td><?php echo htmlspecialchars($cl['e_tilt']); ?></td>
+                    <td><?php echo htmlspecialchars($cl['antenna_height']); ?><?php echo $cl['antenna_height'] !== '' ? 'm' : ''; ?></td>
+                    <td><?php echo htmlspecialchars($cl['cell_status']); ?></td>
+                </tr>
+                <?php endwhile; ?>
+            </table>
         </div>
         <?php endif; ?>
 

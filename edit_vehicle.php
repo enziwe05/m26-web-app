@@ -35,6 +35,7 @@ if (isset($_POST['registration'])) {
         try {
             $stmt->execute();
             $stmt->close();
+            flash('Vehicle saved.');
             header('Location: vehicle_detail.php?vehicle_id=' . $vehicle_id);
             exit;
         } catch (mysqli_sql_exception $e) {

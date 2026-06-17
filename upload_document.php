@@ -16,8 +16,7 @@ $site = $stmt->get_result()->fetch_assoc();
 $stmt->close();
 
 if (!$site) {
-    echo "Site not found. <a href='view_sites.php'>Back</a>";
-    exit;
+    error_page('Site not found', 'That site may have been removed or the link is wrong.', 'view_sites.php', 'Back to sites');
 }
 
 $message = "";
@@ -54,6 +53,7 @@ if (isset($_POST['doc_name'])) {
                 $stmt->execute();
                 $stmt->close();
 
+                flash('Document uploaded.');
                 header('Location: site_detail.php?site_id=' . $site_id);
                 exit;
             } else {

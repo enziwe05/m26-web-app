@@ -26,8 +26,7 @@ $visit = $stmt->get_result()->fetch_assoc();
 $stmt->close();
 
 if (!$visit) {
-    echo "Visit not found. <a href='view_visits.php'>Back</a>";
-    exit;
+    error_page('Visit not found', 'That visit may have been deleted or the link is wrong.', 'view_visits.php', 'Back to visits');
 }
 
 // ── Check for existing maintenance form ────────────────────────────────────────
@@ -185,9 +184,10 @@ include 'incl/header.php';
         <div class='page-heading'>
             <h1>Maintenance Form</h1>
             <div style='display:flex; gap:8px; align-items:center;'>
-                <span class='badge badge-<?php echo $visit['status'] == 'in_progress' ? 'in-progress' : $visit['status']; ?>'>
-                    <?php echo str_replace('_', ' ', $visit['status']); ?>
-                </span>
+<?php echo status_badge($visit['status']); ?>
+                <a href='report_print.php?visit_id=<?php echo $visit_id; ?>' target='_blank' class='btn btn-secondary' style='font-size:13px; padding:5px 14px;'>
+                    Save as PDF
+                </a>
                 <a href='visit_detail.php?visit_id=<?php echo $visit_id; ?>' class='btn btn-secondary' style='font-size:13px; padding:5px 14px;'>
                     &larr; Visit
                 </a>

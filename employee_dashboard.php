@@ -30,13 +30,11 @@ function render_table(array $rows): void {
     echo "<table class='data-table'>";
     echo "<tr><th>Site</th><th>Type</th><th>Scheduled</th><th>Status</th><th></th></tr>";
     foreach ($rows as $row) {
-        $badge    = $row['status'] === 'in_progress' ? 'in-progress' : $row['status'];
-        $label    = str_replace('_', ' ', $row['status']);
         echo "<tr>";
         echo "<td>" . htmlspecialchars($row['site_name']) . "</td>";
         echo "<td>" . htmlspecialchars($row['visit_type']) . "</td>";
         echo "<td>" . fmt_date($row['scheduled_date']) . "</td>";
-        echo "<td><span class='badge badge-$badge'>$label</span></td>";
+        echo "<td>" . status_badge($row['status']) . "</td>";
         echo "<td><a href='employee_visit.php?visit_id=" . $row['visit_id'] . "'>Open</a></td>";
         echo "</tr>";
     }
@@ -52,7 +50,12 @@ include 'incl/header.php';
         </div>
 
         <?php if (empty($active) && empty($completed)): ?>
-            <p>You have no visits assigned to you.</p>
+            <?php echo empty_state(
+                'No visits assigned to you',
+                'When the office schedules a site visit for you, it will appear here. In the meantime, you can do your daily vehicle check.',
+                'vehicle_inspection.php',
+                'Do my vehicle check'
+            ); ?>
         <?php else: ?>
 
             <?php if (!empty($active)): ?>

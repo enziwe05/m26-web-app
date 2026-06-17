@@ -38,6 +38,7 @@ include 'incl/header.php';
             <h1>Employees</h1>
             <a href='add_employee.php' class='btn btn-primary'>+ Add Employee</a>
         </div>
+        <p class='page-intro'>Staff accounts and roles. Change someone's status inline, or open them to edit their details.</p>
 
         <form method='GET' action='view_employees.php' class='filter-bar'>
             <input type='text' name='search' placeholder='Search by name or username...'
@@ -50,7 +51,7 @@ include 'incl/header.php';
 
         <?php
         if ($result->num_rows == 0) {
-            echo "<p>No employees found.</p>";
+            echo empty_state('No employees found', 'No staff match your search.', 'add_employee.php', '+ Add Employee');
         } else {
             echo "<div class='table-scroll'>";
             echo "<table class='data-table'>";

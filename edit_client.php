@@ -88,6 +88,7 @@ if (isset($_POST['name'])) {
                 $stmt->close();
             }
 
+            flash('Client updated.');
             header('Location: view_clients.php');
             exit;
         }

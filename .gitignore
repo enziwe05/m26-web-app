@@ -1,0 +1,11 @@
+# Per-server secrets / config (never commit real DB credentials)
+incl/config.local.php
+
+# Uploaded user files — keep the protective .htaccess, ignore the rest
+uploads/*
+!uploads/.htaccess
+
+# Logs & OS cruft
+*.log
+.DS_Store
+Thumbs.db

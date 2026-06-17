@@ -10,7 +10,7 @@ if (!$client) {
 $visit_id = (int)($_GET['visit_id'] ?? 0);
 
 // Load the visit, but ONLY if its site belongs to this client's company
-$f      = client_notes_filter($client['match_keyword'], 's.notes');
+$f      = client_site_filter($client['match_keyword'], 's');
 $params = array_merge([$visit_id], $f['params']);
 $types  = 'i' . str_repeat('s', count($f['params']));
 $stmt = $conn->prepare("
@@ -81,7 +81,10 @@ include 'incl/header.php';
 
         <div class='page-heading'>
             <h1>Maintenance Report</h1>
-            <a href='client_site_detail.php?site_id=<?php echo $visit['site_id']; ?>' class='btn btn-secondary'>&larr; Site</a>
+            <div style='display:flex; gap:8px;'>
+                <button type='button' class='btn btn-secondary no-print' onclick='window.print()'>Save as PDF</button>
+                <a href='client_site_detail.php?site_id=<?php echo $visit['site_id']; ?>' class='btn btn-secondary'>&larr; Site</a>
+            </div>
         </div>
 
         <div class='card' style='font-size:13px;'>

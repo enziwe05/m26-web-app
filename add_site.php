@@ -21,6 +21,8 @@ if (isset($_POST['site_code'])) {
     $latitude   = trim($_POST['latitude'] ?? '');
     $longitude  = trim($_POST['longitude'] ?? '');
     $notes      = trim($_POST['notes'] ?? '');
+    $operator   = (isset($_POST['operator']) && array_key_exists($_POST['operator'], client_companies()))
+                  ? $_POST['operator'] : null;
 
     // Required fields — a site isn't valid without these
     if ($site_code == '' || $site_name == '' || !in_array($region, $regions)) {
@@ -30,15 +32,16 @@ if (isset($_POST['site_code'])) {
         $lng = $longitude != '' ? $longitude : null;
 
         $stmt = $conn->prepare("
-            INSERT INTO sites (site_code, site_name, location, latitude, longitude, notes, region)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO sites (site_code, site_name, location, latitude, longitude, notes, region, operator)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         ");
-        $stmt->bind_param('sssddss', $site_code, $site_name, $location, $lat, $lng, $notes, $region);
+        $stmt->bind_param('sssddsss', $site_code, $site_name, $location, $lat, $lng, $notes, $region, $operator);
 
         try {
             $stmt->execute();
             $new_id = $stmt->insert_id;
             $stmt->close();
+            flash('Site added.');
             header('Location: site_detail.php?site_id=' . $new_id);
             exit;
         } catch (mysqli_sql_exception $e) {
@@ -56,6 +59,7 @@ $v_loc    = isset($_POST['location'])  ? htmlspecialchars($_POST['location'])  :
 $v_lat    = isset($_POST['latitude'])  ? htmlspecialchars($_POST['latitude'])  : '';
 $v_lng    = isset($_POST['longitude']) ? htmlspecialchars($_POST['longitude']) : '';
 $v_notes  = isset($_POST['notes'])     ? htmlspecialchars($_POST['notes'])     : '';
+$v_oper   = $_POST['operator'] ?? '';
 
 $page_title = 'M26 | Add Site';
 include 'incl/header.php';
@@ -92,6 +96,19 @@ include 'incl/header.php';
                         <option value='<?php echo $r; ?>'<?php echo $v_region === $r ? ' selected' : ''; ?>><?php echo $r; ?></option>
                     <?php endforeach; ?>
                 </select>
+            </div>
+
+            <div class='form-group'>
+                <label>Operator / Client</label>
+                <select name='operator'>
+                    <option value=''>— None / other —</option>
+                    <?php foreach (client_companies() as $key => $def): ?>
+                        <option value='<?php echo htmlspecialchars($key); ?>'<?php echo $v_oper === $key ? ' selected' : ''; ?>>
+                            <?php echo htmlspecialchars($def['label']); ?>
+                        </option>
+                    <?php endforeach; ?>
+                </select>
+                <small style='color:#888; display:block; margin-top:4px;'>Which operator owns this site (controls what their client portal sees).</small>
             </div>
 
             <div class='form-group'>

@@ -167,6 +167,7 @@ if ($is_final) {
     $stmt->execute();
     $stmt->close();
 
+    flash('Maintenance form submitted. Thank you!');
     header('Location: employee_dashboard.php?submitted=1');
     exit;
 }

@@ -19,6 +19,7 @@ if (isset($_POST['registration'])) {
             $stmt->execute();
             $new_id = $stmt->insert_id;
             $stmt->close();
+            flash('Vehicle added.');
             header('Location: vehicle_detail.php?vehicle_id=' . $new_id);
             exit;
         } catch (mysqli_sql_exception $e) {

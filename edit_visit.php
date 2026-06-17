@@ -109,7 +109,13 @@ include 'incl/header.php';
 
             <div class='form-group'>
                 <label>Visit Type *</label>
-                <input type='text' name='visit_type' value='<?php echo htmlspecialchars($visit['visit_type']); ?>'>
+                <select name='visit_type'>
+                    <?php foreach (visit_types() as $vt): ?>
+                        <option value='<?php echo htmlspecialchars($vt); ?>'<?php echo $visit['visit_type'] === $vt ? ' selected' : ''; ?>>
+                            <?php echo htmlspecialchars($vt); ?>
+                        </option>
+                    <?php endforeach; ?>
+                </select>
             </div>
 
             <div class='form-group'>
