@@ -65,8 +65,14 @@ function saved_val($decoded, $section, $field, $key) {
     return htmlspecialchars($decoded[$section][$field][$key] ?? '');
 }
 
-$mtype_label = $visit['maintenance_type'] === 'passive' ? 'Passive Maintenance' : 'Active Maintenance';
-$mtype_badge = $visit['maintenance_type'] === 'passive' ? 'background:#6c757d;' : 'background:#0d6efd;';
+$mtype = $visit['maintenance_type'] ?? 'active';
+$mtype_label = ['active' => 'Active Maintenance', 'passive' => 'Passive Maintenance', 'housekeeping' => 'Housekeeping'][$mtype] ?? 'Active Maintenance';
+$mtype_badge = $mtype === 'passive' ? 'background:#6c757d;' : ($mtype === 'housekeeping' ? 'background:#198754;' : 'background:#0d6efd;');
+
+// Minimum photos requirement (for client-side guidance and server-side enforcement in submit_visit.php)
+$ps_min = $conn->query("SELECT min_photos FROM payroll_settings WHERE id = 1")->fetch_assoc();
+$min_photos_for_js = (int)($ps_min['min_photos'] ?? 1);
+
 $page_title = 'M26 | ' . $visit['site_code'] . ' Maintenance Form';
 include 'incl/header.php';
 ?>
@@ -184,6 +190,10 @@ include 'incl/header.php';
         <form method='POST' action='submit_visit.php' enctype='multipart/form-data'>
             <?php echo csrf_field(); ?>
             <input type='hidden' name='visit_id' value='<?php echo $visit_id; ?>'>
+            <!-- Filled silently on page load; recorded for the office only -->
+            <input type='hidden' name='submit_lat' id='submit-lat' value=''>
+            <input type='hidden' name='submit_lon' id='submit-lon' value=''>
+            <input type='hidden' name='submit_accuracy' id='submit-acc' value=''>
 
             <!-- ── Maintenance Type ── -->
             <div class='mf-section card'>
@@ -202,6 +212,11 @@ include 'incl/header.php';
                         <input type='radio' name='maintenance_type' value='passive'
                                <?php echo $mt == 'passive' ? 'checked' : ''; ?>>
                         Passive Maintenance
+                    </label>
+                    <label style='display:flex; align-items:center; gap:6px; font-weight:600; cursor:pointer;'>
+                        <input type='radio' name='maintenance_type' value='housekeeping'
+                               <?php echo $mt == 'housekeeping' ? 'checked' : ''; ?>>
+                        Housekeeping
                     </label>
                 </div>
                 <small style='color:#666; display:block; margin-top:8px;'>
@@ -253,7 +268,11 @@ include 'incl/header.php';
                 <div class='photo-grid' style='margin-bottom:12px;'>
                     <?php foreach ($site_photos as $ph): ?>
                     <div class='photo-thumb'>
-                        <img src='uploads/<?php echo htmlspecialchars($ph['photo_filename']); ?>' alt=''>
+                        <a class='photo-view' href='uploads/<?php echo htmlspecialchars($ph['photo_filename']); ?>'
+                           data-full='uploads/<?php echo htmlspecialchars($ph['photo_filename']); ?>'
+                           data-caption='<?php echo htmlspecialchars($ph['caption']); ?>'>
+                            <img src='uploads/<?php echo htmlspecialchars($ph['photo_filename']); ?>' alt=''>
+                        </a>
                         <?php if ($ph['caption']): ?>
                         <div class='pt-cap'><?php echo htmlspecialchars($ph['caption']); ?></div>
                         <?php endif; ?>
@@ -362,22 +381,95 @@ include 'incl/header.php';
             </div>
 
             <!-- Save / Submit -->
-            <div style='margin: 20px 0; display:flex; gap:10px; flex-wrap:wrap;'>
+            <div id='photo-warn' style='display:none; background:#fff3cd; border:1px solid #ffc107; color:#856404;
+                 border-radius:5px; padding:10px 14px; margin-bottom:12px; font-size:13px;'>
+                Please attach at least <strong><?php echo $min_photos_for_js; ?> photo(s)</strong> of the site before submitting.
+            </div>
+            <div style='margin: 20px 0; display:flex; gap:14px; flex-wrap:wrap; align-items:center;'>
                 <button type='submit' name='save_draft' value='1' class='btn btn-secondary'>Save Progress</button>
-                <button type='submit' name='submit_final' value='1' class='btn btn-primary'
-                        onclick="return confirm('Submit and complete this visit? You will not be able to edit the form afterwards.');">
+                <button type='button' id='btn-final' class='btn-final-submit'
+                        data-min='<?php echo $min_photos_for_js; ?>'
+                        data-existing='<?php echo count($site_photos); ?>'>
                     Submit &amp; Complete
                 </button>
                 <a href='employee_dashboard.php' class='btn btn-secondary'>Back</a>
             </div>
-            <p style='font-size:12px; color:#888;'>
-                <strong>Save Progress</strong> keeps the visit open so you can finish it on another day.
-                <strong>Submit &amp; Complete</strong> finalises the report and closes the visit.
+            <p style='font-size:12px; color:#888; line-height:1.6;'>
+                <strong>Save Progress</strong> keeps the form editable — you can return and finish it later.<br>
+                <strong>Submit &amp; Complete</strong> finalises the visit &mdash; it can&rsquo;t be edited afterwards.
             </p>
 
         </form>
+
+        <script>
+        /*
+         * Silent, non-blocking location capture for the maintenance form.
+         * Runs once on page load; if the browser refuses or times out the
+         * hidden fields simply stay empty and the form submits as normal.
+         */
+        (function () {
+            if (!navigator.geolocation) return;
+            navigator.geolocation.getCurrentPosition(function (pos) {
+                var la = document.getElementById('submit-lat');
+                var lo = document.getElementById('submit-lon');
+                var ac = document.getElementById('submit-acc');
+                if (la && lo) {
+                    la.value = pos.coords.latitude.toFixed(7);
+                    lo.value = pos.coords.longitude.toFixed(7);
+                    if (ac) ac.value = Math.round(pos.coords.accuracy);
+                }
+            }, function () { /* denied/unavailable — carry on silently */ },
+            { enableHighAccuracy: true, timeout: 8000, maximumAge: 120000 });
+        })();
+
+        /*
+         * Final-submit button: client-side photo check.
+         * Guards against submitting with zero photos when none exist yet.
+         * The server-side check in submit_visit.php is the real enforcement.
+         */
+        (function () {
+            var btn  = document.getElementById('btn-final');
+            var warn = document.getElementById('photo-warn');
+            if (!btn) return;
+
+            btn.addEventListener('click', function () {
+                var min      = parseInt(btn.getAttribute('data-min'), 10) || 1;
+                var existing = parseInt(btn.getAttribute('data-existing'), 10) || 0;
+
+                // Count files chosen in any of the photo inputs
+                var inputs  = document.querySelectorAll('input[type="file"][name^="photo_"]');
+                var newFiles = 0;
+                for (var i = 0; i < inputs.length; i++) {
+                    if (inputs[i].files && inputs[i].files.length > 0) newFiles++;
+                }
+
+                if (existing + newFiles < min) {
+                    if (warn) { warn.style.display = 'block'; warn.scrollIntoView({ behavior: 'smooth' }); }
+                    return; // block submit — server will enforce anyway
+                }
+
+                if (warn) warn.style.display = 'none';
+
+                // Inject submit_final and submit the form
+                var form = btn.closest('form');
+                if (!form) return;
+                if (!document.getElementById('_submit_final_flag')) {
+                    var hid = document.createElement('input');
+                    hid.type  = 'hidden';
+                    hid.name  = 'submit_final';
+                    hid.value = '1';
+                    hid.id    = '_submit_final_flag';
+                    form.appendChild(hid);
+                }
+                if (confirm('This will finalise and lock the form. Continue?')) {
+                    form.submit();
+                }
+            });
+        })();
+        </script>
         <?php endif; ?>
 
         <p style='margin-top:16px;'><a href='employee_dashboard.php'>&larr; My Visits</a></p>
 
+<?php include 'incl/lightbox.php'; ?>
 <?php include 'incl/footer.php'; ?>

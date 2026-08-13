@@ -1,17 +1,27 @@
 <?php
 require_once 'incl/dbconn.php';
 
-// Where each role lands after login
-function home_for_role(string $role): string {
-    if ($role === 'employee') return 'employee_dashboard.php';
-    if ($role === 'client')   return 'client_dashboard.php';
-    return 'admin_dashboard.php';   // admin & supervisor
+// Where each role lands after login.
+// Employees start their day on the Clock In page and only move on to their
+// dashboard once they've clocked in today — so the first thing they do each
+// day is clock in.
+function home_for_role(mysqli $conn, string $role, int $user_id): string {
+    if ($role === 'client') return 'client_dashboard.php';
+    if ($role !== 'employee') return 'admin_dashboard.php'; // admin & supervisor
+
+    $stmt = $conn->prepare("SELECT 1 FROM time_entries WHERE user_id = ? AND DATE(clock_in_at) = CURDATE() LIMIT 1");
+    $stmt->bind_param('i', $user_id);
+    $stmt->execute();
+    $clocked_today = (bool) $stmt->get_result()->fetch_row();
+    $stmt->close();
+
+    return $clocked_today ? 'employee_dashboard.php' : 'clock.php';
 }
 
-// Already logged in — send to the right dashboard.
+// Already logged in — send to the right landing page.
 $role = current_user_role();
 if ($role !== '') {
-    header('Location: ' . home_for_role($role));
+    header('Location: ' . home_for_role($conn, $role, current_user_id()));
     exit;
 }
 
@@ -46,7 +56,7 @@ if (isset($_POST['username'])) {
                 setcookie(session_name(), session_id(), time() + 604800, $p['path'], $p['domain'], $p['secure'], true);
             }
 
-            header('Location: ' . home_for_role($user['role']));
+            header('Location: ' . home_for_role($conn, $user['role'], (int) $user['user_id']));
             exit;
         }
 

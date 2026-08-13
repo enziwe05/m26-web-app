@@ -63,6 +63,17 @@ function fmt_datetime($val): string {
     return date('d M Y, H:i', strtotime($val));
 }
 
+// Everyday-language "time since" from a day count.
+//   null → 'Never'   |   <14 → 'N days ago'   |   <60 → 'N weeks ago'   |   else 'N months ago'
+function human_ago(?int $days): string {
+    if ($days === null) return 'Never';
+    if ($days < 1)   return 'Today';
+    if ($days < 14)  return $days . ' day' . ($days === 1 ? '' : 's') . ' ago';
+    if ($days < 60)  return round($days / 7) . ' weeks ago';
+    $m = (int) round($days / 30);
+    return $m . ' month' . ($m === 1 ? '' : 's') . ' ago';
+}
+
 // ── Shared view helpers ───────────────────────────────────────────────────────
 // Standard visit types (single source of truth for the create/edit dropdowns)
 function visit_types(): array {
@@ -80,6 +91,60 @@ function status_badge(string $status): string {
     $cls   = $status === 'in_progress' ? 'in-progress' : $status;
     $label = str_replace('_', ' ', $status);
     return "<span class='badge badge-" . htmlspecialchars($cls) . "'>" . htmlspecialchars($label) . "</span>";
+}
+
+// Where a visit came from. A tech who self-selects a site is BOTH the creator
+// and the assignee; office-assigned visits always have a different creator.
+function visit_origin_badge(int $created_by, int $assigned_to): string {
+    if ($created_by === $assigned_to) {
+        return "<span class='badge badge-attention' title='The technician picked this site themselves'>Self-selected by tech</span>";
+    }
+    return "<span class='badge badge-assigned' title='Scheduled by the office'>Assigned by office</span>";
+}
+
+// Searchable site picker (a type-to-filter combobox) — far friendlier than a
+// native <select> with hundreds of sites. Renders a text input backed by a
+// <datalist> plus a hidden `site_id` field that JS keeps in sync. Lets the user
+// find a site by CODE or name. Pass $selected_id to pre-fill (edit/preselect).
+function site_picker_field(mysqli $conn, int $selected_id = 0): string {
+    $res  = $conn->query("SELECT site_id, site_code, site_name FROM sites ORDER BY site_code");
+    $opts = '';
+    $map  = [];
+    $selected_label = '';
+    while ($s = $res->fetch_assoc()) {
+        $label = $s['site_code'] . ' — ' . $s['site_name'];
+        $opts .= "<option value=\"" . htmlspecialchars($label) . "\"></option>";
+        $map[$label] = (int) $s['site_id'];
+        if ((int) $s['site_id'] === $selected_id) $selected_label = $label;
+    }
+    $json = htmlspecialchars(json_encode($map, JSON_UNESCAPED_UNICODE), ENT_QUOTES);
+
+    $h  = "<input type='text' class='site-picker-input' id='site-picker-input'
+                  list='site-picker-list' autocomplete='off'
+                  placeholder='Type a site code or name…'
+                  value=\"" . htmlspecialchars($selected_label) . "\">";
+    $h .= "<datalist id='site-picker-list'>$opts</datalist>";
+    $h .= "<input type='hidden' name='site_id' id='site-picker-id' value='" . ($selected_id ?: '') . "'>";
+    $h .= "<div class='site-picker-hint' id='site-picker-hint'>Pick a site from the list.</div>";
+    $h .= "<script>(function(){
+        var map = $json;
+        var input = document.getElementById('site-picker-input');
+        var hidden = document.getElementById('site-picker-id');
+        var hint = document.getElementById('site-picker-hint');
+        function sync(){
+            var v = (input.value || '').trim();
+            if (Object.prototype.hasOwnProperty.call(map, v)) { hidden.value = map[v]; hint.style.display='none'; }
+            else { hidden.value = ''; }
+        }
+        input.addEventListener('input', sync);
+        input.addEventListener('change', sync);
+        var form = input.closest('form');
+        if (form) form.addEventListener('submit', function(e){
+            sync();
+            if (!hidden.value){ hint.style.display='block'; input.focus(); e.preventDefault(); }
+        });
+    })();</script>";
+    return $h;
 }
 
 // A friendly "nothing here yet" block with an optional call-to-action button,

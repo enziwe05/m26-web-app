@@ -24,13 +24,11 @@ if ($visit['status'] === 'completed') {
     exit;
 }
 
-function load_dropdowns(mysqli $conn): array {
-    $sites = $conn->query("SELECT site_id, site_name FROM sites ORDER BY site_name");
-    $techs = $conn->query("SELECT user_id, first_name, last_name FROM users WHERE role = 'employee' AND status = 'active' ORDER BY first_name");
-    return [$sites, $techs];
+function load_techs(mysqli $conn): mysqli_result {
+    return $conn->query("SELECT user_id, first_name, last_name FROM users WHERE role = 'employee' AND status = 'active' ORDER BY first_name");
 }
 
-[$sites, $techs] = load_dropdowns($conn);
+$techs = load_techs($conn);
 
 $message  = '';
 $msg_type = 'alert-error';
@@ -55,7 +53,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $msg_type = 'alert-success';
 
         // Reload everything
-        [$sites, $techs] = load_dropdowns($conn);
+        $techs = load_techs($conn);
         $stmt = $conn->prepare("SELECT v.*, s.site_name FROM visits v JOIN sites s ON s.site_id = v.site_id WHERE v.visit_id = ?");
         $stmt->bind_param('i', $visit_id);
         $stmt->execute();
@@ -83,15 +81,7 @@ include 'incl/header.php';
 
             <div class='form-group'>
                 <label>Site *</label>
-                <select name='site_id'>
-                    <option value=''>-- Select Site --</option>
-                    <?php while ($s = $sites->fetch_assoc()): ?>
-                        <option value='<?php echo $s['site_id']; ?>'
-                            <?php echo $s['site_id'] == $visit['site_id'] ? 'selected' : ''; ?>>
-                            <?php echo htmlspecialchars($s['site_name']); ?>
-                        </option>
-                    <?php endwhile; ?>
-                </select>
+                <?php echo site_picker_field($conn, (int)$visit['site_id']); ?>
             </div>
 
             <div class='form-group'>

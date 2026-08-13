@@ -114,6 +114,9 @@ img { max-width: 100%; }
 .logout-link { color: #f08080; }
 .logout-link:hover { color: #fff; }
 
+/* Hamburger toggle — desktop hides it; mobile shows it (see media query) */
+.sidebar-toggle { display: none; }
+
 /* --- Login page ---------------------------------------------------------- */
 .login-page {
     min-height: 100vh;
@@ -175,6 +178,9 @@ input:focus, select:focus, textarea:focus {
 }
 
 textarea { resize: vertical; min-height: 80px; }
+
+/* Searchable site picker validation hint (shown by JS when nothing is chosen) */
+.site-picker-hint { display: none; color: #b3261e; font-size: 12px; margin-top: 4px; }
 
 /* --- Buttons ------------------------------------------------------------- */
 .btn {
@@ -356,6 +362,18 @@ textarea { resize: vertical; min-height: 80px; }
 
 .filter-bar input,
 .filter-bar select { width: auto; flex: 1; min-width: 160px; }
+
+/* Grouped filter control: small caption label stacked above its input.
+   Used where several small controls (date ranges, dropdowns) sit side by
+   side and should stay compact instead of one field eating the whole row. */
+.filter-field { display: flex; flex-direction: column; gap: 4px; }
+.filter-field label {
+    font-size: 11px; font-weight: 600; text-transform: uppercase;
+    letter-spacing: .05em; color: #7a8290;
+}
+.filter-field input,
+.filter-field select { width: 100%; box-sizing: border-box; }
+.filter-field select { min-width: 220px; }
 
 /* --- Alert / flash messages ---------------------------------------------- */
 .alert {
@@ -554,6 +572,37 @@ textarea { resize: vertical; min-height: 80px; }
 .photo-thumb img { width: 100%; display: block; max-height: 140px; object-fit: cover; }
 .photo-thumb .pt-cap { padding: 5px 8px; font-size: 12px; color: #555; background: #fafbff; }
 
+/* Clickable thumbnail (opens the lightbox) */
+.photo-view { display: block; cursor: zoom-in; position: relative; }
+.photo-view::after {
+    content: '\26F6'; /* expand glyph */
+    position: absolute; top: 6px; right: 6px;
+    width: 22px; height: 22px; line-height: 22px; text-align: center;
+    font-size: 12px; color: #fff; background: rgba(0,0,0,.55);
+    border-radius: 4px; opacity: 0; transition: opacity .12s;
+}
+.photo-view:hover::after { opacity: 1; }
+
+/* Full-screen photo lightbox */
+.lb-overlay {
+    display: none; position: fixed; inset: 0; z-index: 1000;
+    background: rgba(15, 20, 30, .92);
+    align-items: center; justify-content: center; padding: 24px;
+}
+.lb-overlay.open { display: flex; }
+.lb-figure { margin: 0; max-width: 96vw; max-height: 94vh; display: flex;
+             flex-direction: column; align-items: center; gap: 14px; }
+.lb-figure img { max-width: 96vw; max-height: 78vh; object-fit: contain;
+                 border-radius: 6px; box-shadow: 0 10px 40px rgba(0,0,0,.5); background: #fff; }
+.lb-caption { color: #e9edf3; font-size: 14px; text-align: center; max-width: 720px; }
+.lb-actions { display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; }
+.lb-close {
+    position: absolute; top: 14px; right: 20px; z-index: 1;
+    background: transparent; border: none; color: #fff;
+    font-size: 40px; line-height: 1; cursor: pointer; opacity: .85;
+}
+.lb-close:hover { opacity: 1; }
+
 .photo-upload-row { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 8px; }
 
 .upload-row {
@@ -622,6 +671,16 @@ textarea { resize: vertical; min-height: 80px; }
 .timeline-when { color: #888; white-space: nowrap; }
 .timeline-what { color: #222; }
 .timeline-who  { color: #888; }
+.timeline-detail { color: #667085; font-size: 12px; margin-top: 3px; }
+
+/* Category dot for each activity event */
+.tl-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+          margin-right: 7px; vertical-align: middle; background: #9aa4b2; }
+.tl-created   { background: #1a5ca8; }
+.tl-start     { background: #0d9488; }
+.tl-photo     { background: #8a94a6; }
+.tl-draft     { background: #d19a00; }
+.tl-submitted { background: #1a7a3a; }
 
 .timeline-latest {
     display: inline-block;
@@ -673,64 +732,86 @@ textarea { resize: vertical; min-height: 80px; }
 @media (max-width: 768px) {
     .page-wrapper { flex-direction: column; }
 
-    /* Sidebar → sticky top bar */
+    /* Sidebar → sticky top bar with a hamburger toggle */
     .sidebar {
         width: 100%;
         height: auto;          /* override the desktop 100vh so it doesn't fill the screen */
         min-height: auto;
         flex-direction: row;
-        align-items: stretch;
+        flex-wrap: wrap;       /* menu + footer wrap onto full-width rows below */
+        align-items: center;
         position: sticky;
         top: 0;
         z-index: 200;
         box-shadow: 0 2px 8px rgba(0,0,0,0.25);
     }
 
+    /* Top bar row: logo on the left, hamburger on the right */
     .sidebar-logo {
         border-bottom: none;
-        border-right: 1px solid rgba(255,255,255,0.12);
         padding: 0 14px;
-        font-size: 14px;
+        height: 54px;
+        font-size: 15px;
         white-space: nowrap;
-        flex-shrink: 0;
+        flex: 1;               /* pushes the toggle to the right edge */
     }
 
     .logo-icon { font-size: 18px; }
 
-    .sidebar-links {
-        display: flex;
-        flex-direction: row;
-        padding: 0;
-        flex: 1;
-        overflow-x: auto;
+    .sidebar-toggle {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 46px;
+        height: 54px;
+        margin-right: 4px;
+        background: transparent;
+        border: none;
+        color: #fff;
+        cursor: pointer;
     }
+    .sidebar-toggle svg { width: 24px; height: 24px; display: block; }
 
-    .sidebar-links li { display: flex; align-items: stretch; }
+    /* Collapsible menu — hidden until the hamburger is tapped */
+    .sidebar-links {
+        flex-basis: 100%;
+        flex-direction: column;
+        padding: 4px 0 8px;
+        display: none;
+        border-top: 1px solid rgba(255,255,255,0.12);
+        max-height: 74vh;
+        overflow-y: auto;
+    }
+    .sidebar.open .sidebar-links { display: flex; }
 
-    /* Section labels are desktop-only; the mobile bar is a flat scroll */
-    .sidebar-links .nav-heading { display: none; }
+    .sidebar-links li { display: block; }
+
+    /* Section headings read well in the vertical dropdown — keep them */
+    .sidebar-links .nav-heading { display: block; }
 
     .sidebar-links li a {
         display: flex;
         align-items: center;
-        padding: 0 16px;
+        gap: 11px;
+        padding: 12px 20px;
         white-space: nowrap;
-        font-size: 13px;
-        height: 48px;
+        font-size: 15px;
     }
 
     .sidebar-footer {
-        border-top: none;
-        border-left: 1px solid rgba(255,255,255,0.12);
+        flex-basis: 100%;
+        border-top: 1px solid rgba(255,255,255,0.12);
         flex-direction: row;
-        padding: 0 14px;
+        justify-content: space-between;
+        padding: 12px 20px;
         align-items: center;
         gap: 10px;
-        flex-shrink: 0;
+        display: none;
     }
+    .sidebar.open .sidebar-footer { display: flex; }
 
-    .sidebar-user { display: none; }
-    .logout-link  { font-size: 13px; white-space: nowrap; }
+    .sidebar-user { display: inline; }
+    .logout-link  { font-size: 14px; white-space: nowrap; }
 
     /* Main content */
     .main-content { padding: 16px; }
@@ -775,6 +856,8 @@ textarea { resize: vertical; min-height: 80px; }
     .filter-bar input,
     .filter-bar select { width: 100%; min-width: unset; }
     .filter-bar .btn   { width: 100%; text-align: center; }
+    .filter-field      { width: 100%; }
+    .filter-field select { min-width: unset; }
 
     /* Photos */
     .photo-pair img { width: 130px; height: 100px; }
@@ -828,3 +911,269 @@ textarea { resize: vertical; min-height: 80px; }
     /* Antenna entry grid → single column on the narrowest phones */
     .antenna-grid    { grid-template-columns: 1fr !important; }
 }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Clock in/out, shifts & payroll (2026-07 feature update)
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* Clock page */
+.clock-card { text-align: center; padding: 34px 24px; }
+.clock-status-label { font-size: 14px; text-transform: uppercase; letter-spacing: .06em;
+                      color: #888; font-weight: 600; margin: 0 0 4px; }
+.clock-since { font-size: 13px; color: #666; margin: 0 0 14px; }
+.clock-shift-note { font-size: 13px; color: #444; margin: 0 0 14px; }
+.clock-elapsed { font-size: 44px; font-weight: 700; color: #1a3a5c; letter-spacing: .03em;
+                 font-variant-numeric: tabular-nums; margin: 6px 0 20px; }
+.clock-btn { font-size: 17px; padding: 14px 48px; border-radius: 8px; }
+.clock-btn:disabled { opacity: .6; cursor: wait; }
+.clock-geo-status { font-size: 13px; font-weight: 600; margin: 0 0 14px; min-height: 18px; line-height: 1.4; }
+.clock-geo-status.geo-info { color: #666; }
+.clock-geo-status.geo-ok   { color: #1a7a3a; }
+.clock-geo-status.geo-warn { color: #b3261e; }
+
+/* Day / night shift badges */
+.badge-shift-day   { background: #fff8e1; color: #8a6d00; }
+.badge-shift-night { background: #e8eaf6; color: #303f9f; }
+
+/* Captured-location links (timesheets / admin form view) */
+.map-link { color: #1a5ca8; text-decoration: none; border-bottom: 1px dotted #1a5ca8; }
+.map-link:hover { color: #154e92; }
+
+/* Payroll settings layout */
+.settings-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+                 gap: 0 24px; }
+
+/* Checkbox list (assign shifts employee picker) */
+.checkbox-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+                 gap: 6px; max-height: 260px; overflow-y: auto; border: 1px solid #dfe4ea;
+                 border-radius: 6px; padding: 10px 12px; background: #fafbfc; }
+.checkbox-item { display: flex; align-items: center; gap: 8px; font-size: 13px;
+                 font-weight: 400; cursor: pointer; }
+.checkbox-item input { width: auto; }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   2026-07 Refinements — location status cards & map buttons
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* "No GPS" badge used in timesheets */
+.badge-loc-none { background: #e9ecef; color: #6c757d; }
+
+/* Small accuracy line next to a map button */
+.loc-acc { font-size: 11px; color: #888; margin-left: 6px; }
+
+/* Location status badge on the maintenance form admin view */
+.loc-badge { font-size: 12px; padding: 4px 12px; }
+
+/* Compact "View on map" button (inline with badges, no full-width) */
+.btn-map {
+    display: inline-block;
+    padding: 4px 12px;
+    font-size: 12px;
+    font-weight: 600;
+    border-radius: 4px;
+    white-space: nowrap;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Dashboard enhancements (v24)
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* Metric card colour variants */
+.stat-box--amber { border-color: #ffc107; background: #fffbf0; }
+.stat-box--amber .stat-label,
+.stat-box--amber .stat-value { color: #7a5c00; }
+
+.stat-box--red   { border-color: #dc3545; background: #fff5f5; }
+.stat-box--red   .stat-label,
+.stat-box--red   .stat-value { color: #721c24; }
+
+.stat-box--green { border-color: #28a745; background: #f0fff4; }
+.stat-box--green .stat-value { color: #155724; }
+.stat-box--green .stat-label { color: #155724; }
+
+/* ── Two-line table cells (name over a muted sub-line) ───────────────────────── */
+.cell-name { font-weight: 600; color: #1a3a5c; line-height: 1.25; }
+.cell-sub  { color: #8a94a6; font-size: 12px; margin-top: 2px; }
+
+/* Gentle zebra striping across every data table for readability */
+.data-table tbody tr:nth-child(even) { background: #fbfcfe; }
+.data-table tbody tr:hover           { background: #f2f6fc; }
+
+/* ── Dashboard charts ───────────────────────────────────────────────────────── */
+.dash-charts {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 16px;
+    margin: 20px 0;
+}
+.chart-card {
+    background: #fff;
+    border: 1px solid #e6e9ef;
+    border-radius: 12px;
+    padding: 18px 20px;
+    box-shadow: 0 1px 3px rgba(20, 40, 70, .05);
+}
+.chart-card h3 {
+    margin: 0 0 4px;
+    font-size: 14px;
+    color: #1a3a5c;
+    letter-spacing: .01em;
+}
+.chart-card .chart-sub { margin: 0 0 14px; font-size: 12px; color: #9aa3b0; }
+
+/* Donut + legend */
+.donut-wrap { display: flex; align-items: center; gap: 20px; flex-wrap: wrap; }
+.donut { position: relative; width: 132px; height: 132px; flex: none; }
+.donut .donut-center {
+    position: absolute; inset: 0; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; text-align: center;
+}
+.donut .donut-pct  { font-size: 26px; font-weight: 800; color: #1a3a5c; line-height: 1; }
+.donut .donut-cap  { font-size: 11px; color: #9aa3b0; margin-top: 3px; }
+.donut-legend { list-style: none; margin: 0; padding: 0; flex: 1; min-width: 150px; }
+.donut-legend li { display: flex; align-items: center; gap: 9px; margin-bottom: 9px; font-size: 13px; color: #556; }
+.donut-legend .sw { width: 11px; height: 11px; border-radius: 3px; flex: none; }
+.donut-legend .lv { margin-left: auto; font-weight: 700; color: #1a3a5c; }
+
+/* Vertical bar chart */
+.bars { display: flex; align-items: flex-end; gap: 8px; height: 150px; }
+.bar-col { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 6px; height: 100%; }
+.bar-col .bar {
+    width: 100%; max-width: 38px; min-height: 3px;
+    background: linear-gradient(180deg, #3a78e0, #1a3a5c);
+    border-radius: 6px 6px 0 0;
+    transition: height .3s ease;
+}
+.bar-col .bar-val { font-size: 12px; font-weight: 700; color: #1a3a5c; }
+.bar-col .bar-lbl { font-size: 11px; color: #9aa3b0; }
+
+/* Horizontal bar chart */
+.hbars { display: flex; flex-direction: column; gap: 11px; }
+.hbar-row { display: grid; grid-template-columns: 82px 1fr 34px; align-items: center; gap: 10px; font-size: 13px; }
+.hbar-row .hbar-name { color: #556; }
+.hbar-track { background: #eef1f6; border-radius: 6px; height: 16px; overflow: hidden; }
+.hbar-fill  { height: 100%; border-radius: 6px; background: linear-gradient(90deg, #e0a800, #dc3545); min-width: 2px; }
+.hbar-row .hbar-val { text-align: right; font-weight: 700; color: #1a3a5c; }
+
+/* Employee dashboard: clock status strip */
+.emp-clock-strip {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    background: #fff;
+    border: 1px solid #dde2ea;
+    border-radius: 7px;
+    padding: 16px 22px;
+    margin-bottom: 18px;
+    flex-wrap: wrap;
+}
+.emp-clock-strip.in  { border-color: #28a745; background: #f0fff4; }
+.emp-clock-ico  { flex-shrink: 0; color: #9aa4b2; display: inline-flex; }
+.emp-clock-ico svg { width: 26px; height: 26px; display: block; }
+.emp-clock-strip.in .emp-clock-ico { color: #28a745; }
+.emp-clock-body { flex: 1; min-width: 160px; }
+.emp-clock-label { font-size: 11px; color: #888; text-transform: uppercase;
+                   letter-spacing: .06em; font-weight: 700; }
+.emp-clock-val   { font-size: 17px; font-weight: 700; color: #1a3a5c; margin-top: 2px; }
+.emp-clock-sub   { font-size: 12px; color: #666; margin-top: 2px; }
+
+/* Employee dashboard: shift info strip */
+.emp-shift-strip {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    background: #fff;
+    border: 1px solid #dde2ea;
+    border-radius: 7px;
+    padding: 13px 22px;
+    margin-bottom: 18px;
+    font-size: 13px;
+    flex-wrap: wrap;
+}
+.emp-shift-strip .shift-label { font-size: 11px; color: #888; text-transform: uppercase;
+                                 letter-spacing: .06em; font-weight: 700; flex-shrink: 0; }
+.emp-shift-strip .shift-window { color: #666; font-size: 13px; }
+
+/* Hours-this-week chip */
+.hrs-chip {
+    display: inline-block;
+    background: #e8f0fb;
+    color: #1a3a5c;
+    border-radius: 20px;
+    padding: 3px 13px;
+    font-size: 13px;
+    font-weight: 700;
+}
+
+/* Dashboard mini-visit search row */
+.mini-visit-bar {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 14px;
+    align-items: center;
+    flex-wrap: wrap;
+}
+.mini-visit-bar input[type="text"] {
+    flex: 1;
+    min-width: 180px;
+    padding: 7px 11px;
+    border: 1px solid #c8cdd6;
+    border-radius: 5px;
+    font-size: 13px;
+    font-family: inherit;
+    color: #222;
+    background: #fff;
+}
+.mini-visit-bar .btn { padding: 7px 14px; font-size: 13px; }
+.mini-visit-bar .view-all-link {
+    margin-left: auto;
+    font-size: 13px;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+/* Submit & Complete button — clearly the final, destructive action */
+.btn-final-submit {
+    background: #c0392b;
+    color: #fff;
+    font-size: 15px;
+    padding: 11px 28px;
+    font-weight: 700;
+    letter-spacing: .015em;
+    border-radius: 6px;
+    border: none;
+    cursor: pointer;
+    font-family: inherit;
+    display: inline-block;
+}
+.btn-final-submit:hover  { background: #a93226; color: #fff; text-decoration: none; }
+.btn-final-submit:active { background: #922b21; }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Clickable stat cards (v25)
+   ══════════════════════════════════════════════════════════════════════════ */
+a.stat-box {
+    text-decoration: none;
+    color: inherit;
+    cursor: pointer;
+    display: block;
+    transition: box-shadow .15s ease, transform .15s ease;
+}
+a.stat-box:hover {
+    text-decoration: none;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, .10);
+    transform: translateY(-2px);
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Attendance overview panel — timesheets.php (v26)
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* Status badges for the attendance table */
+.badge-clocked-in  { background: #d1f2d1; color: #1a6b1a; }
+.badge-clocked-out { background: #e9ecef; color: #6c757d; }
+.badge-not-clocked { background: #ffe5cc; color: #8a4b00; }
+
+/* Highlight rows where the employee has not clocked in today */
+.att-row-absent td              { background: #fff9f2; }
+.att-row-absent td:first-child  { border-left: 3px solid #e67e22; }

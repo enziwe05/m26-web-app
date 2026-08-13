@@ -1,5 +1,6 @@
 <?php
 require_once 'incl/dbconn.php';
+require_once 'incl/geo.php';
 require_staff();
 
 if (!isset($_GET['visit_id'])) {
@@ -53,7 +54,7 @@ $save_message = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['admin_save'])) {
     csrf_check();
 
-    $maintenance_type = in_array($_POST['maintenance_type'] ?? '', ['active', 'passive'])
+    $maintenance_type = in_array($_POST['maintenance_type'] ?? '', ['active', 'passive', 'housekeeping'])
         ? $_POST['maintenance_type']
         : ($visit['maintenance_type'] ?? 'active');
 
@@ -234,13 +235,43 @@ include 'incl/header.php';
                 <tr><th style='width:220px;'>Field</th><th>Value</th></tr>
                 <tr><td>Site</td><td><?php echo htmlspecialchars($visit['site_code'] . ' — ' . $visit['site_name']); ?></td></tr>
                 <tr><td>Visit Type</td><td><?php echo htmlspecialchars($visit['visit_type']); ?></td></tr>
-                <tr><td>Maintenance Type</td><td><?php echo ucfirst(htmlspecialchars($visit['maintenance_type'] ?? 'active')); ?> Maintenance</td></tr>
+                <tr><td>Maintenance Type</td><td><?php $mtv = $visit['maintenance_type'] ?? 'active'; echo $mtv === 'housekeeping' ? 'Housekeeping' : ucfirst(htmlspecialchars($mtv)) . ' Maintenance'; ?></td></tr>
                 <tr><td>Technician</td><td><?php echo htmlspecialchars($visit['tech_first'] . ' ' . $visit['tech_last']); ?></td></tr>
                 <tr><td>Maintenance Date</td><td><?php echo htmlspecialchars($visit['scheduled_date'] ?? '—'); ?></td></tr>
                 <tr><td>Access Reference</td><td><?php echo htmlspecialchars($mform['access_ref'] ?? '—'); ?></td></tr>
                 <tr><td>Latitude (on-site)</td><td><?php echo htmlspecialchars($mform['capture_lat'] ?? '—'); ?></td></tr>
                 <tr><td>Longitude (on-site)</td><td><?php echo htmlspecialchars($mform['capture_lon'] ?? '—'); ?></td></tr>
                 <tr><td>Data Capture Time</td><td><?php echo htmlspecialchars($mform['capture_time'] ?? '—'); ?></td></tr>
+                <tr>
+                    <td>Submission location <span style='color:#888; font-weight:400;'>(admin only)</span></td>
+                    <td>
+                        <?php
+                        $sloc_status = $mform !== null ? ($mform['submit_location_status'] ?? null) : null;
+                        $sloc_dist   = ($mform !== null && isset($mform['submit_distance_m']) && $mform['submit_distance_m'] !== null)
+                            ? (int)$mform['submit_distance_m'] : null;
+                        $has_coords  = $mform !== null && !empty($mform['submit_lat']) && !empty($mform['submit_lon']);
+                        if ($sloc_status === 'on_site'):
+                        ?>
+                            <span class='badge badge-completed loc-badge'>&#10003; Submitted on site &mdash; <?php echo htmlspecialchars(format_distance($sloc_dist)); ?> from tower</span>
+                        <?php elseif ($sloc_status === 'away'): ?>
+                            <span class='badge badge-critical loc-badge'>&#9888; Submitted <?php echo htmlspecialchars(format_distance($sloc_dist)); ?> from site &mdash; possible off-site upload</span>
+                        <?php else: ?>
+                            <span class='badge loc-badge' style='background:#e9ecef;color:#555;'>Location not captured (GPS was off)</span>
+                        <?php endif; ?>
+                        <?php if ($has_coords): ?>
+                            <br>
+                            <a href='https://maps.google.com/?q=<?php echo rawurlencode($mform['submit_lat'] . ',' . $mform['submit_lon']); ?>'
+                               target='_blank' class='btn btn-secondary btn-map' style='margin-top:6px; font-size:12px; padding:4px 12px;'>View on map</a>
+                            <?php if (!empty($mform['submit_accuracy'])): ?>
+                                <span style='color:#888; font-size:11px;'>GPS accurate to &plusmn;<?php echo htmlspecialchars($mform['submit_accuracy']); ?> m</span>
+                            <?php endif; ?>
+                            <?php if (!empty($mform['submit_captured_at'])): ?>
+                                <span style='color:#888; font-size:11px; display:block; margin-top:2px;'>Captured <?php echo fmt_datetime($mform['submit_captured_at']); ?></span>
+                            <?php endif; ?>
+                            <span style='color:#aaa; font-size:11px; display:block;'><?php echo htmlspecialchars($mform['submit_lat'] . ', ' . $mform['submit_lon']); ?></span>
+                        <?php endif; ?>
+                    </td>
+                </tr>
             </table>
         </div>
 
@@ -251,8 +282,12 @@ include 'incl/header.php';
             <div class='photo-grid'>
                 <?php foreach ($site_photos as $ph): ?>
                 <div class='photo-thumb'>
-                    <img src='uploads/<?php echo htmlspecialchars($ph['photo_filename']); ?>'
-                         alt='<?php echo htmlspecialchars($ph['caption']); ?>'>
+                    <a class='photo-view' href='uploads/<?php echo htmlspecialchars($ph['photo_filename']); ?>'
+                       data-full='uploads/<?php echo htmlspecialchars($ph['photo_filename']); ?>'
+                       data-caption='<?php echo htmlspecialchars($ph['caption']); ?>'>
+                        <img src='uploads/<?php echo htmlspecialchars($ph['photo_filename']); ?>'
+                             alt='<?php echo htmlspecialchars($ph['caption']); ?>'>
+                    </a>
                     <?php if ($ph['caption']): ?>
                     <div class='pt-cap'><?php echo htmlspecialchars($ph['caption']); ?></div>
                     <?php endif; ?>
@@ -340,8 +375,11 @@ include 'incl/header.php';
                             <label style='display:inline-flex; align-items:center; gap:6px; margin-right:20px; cursor:pointer;'>
                                 <input type='radio' name='maintenance_type' value='active' <?php echo $mt == 'active' ? 'checked' : ''; ?>> Active
                             </label>
-                            <label style='display:inline-flex; align-items:center; gap:6px; cursor:pointer;'>
+                            <label style='display:inline-flex; align-items:center; gap:6px; margin-right:20px; cursor:pointer;'>
                                 <input type='radio' name='maintenance_type' value='passive' <?php echo $mt == 'passive' ? 'checked' : ''; ?>> Passive
+                            </label>
+                            <label style='display:inline-flex; align-items:center; gap:6px; cursor:pointer;'>
+                                <input type='radio' name='maintenance_type' value='housekeeping' <?php echo $mt == 'housekeeping' ? 'checked' : ''; ?>> Housekeeping
                             </label>
                         </td>
                     </tr>
@@ -368,6 +406,30 @@ include 'incl/header.php';
                         <td>Data Capture Time</td>
                         <td><input type='text' name='capture_time'
                                    value='<?php echo htmlspecialchars($mform['capture_time'] ?? date("H:i")); ?>'></td>
+                    </tr>
+                    <?php
+                    $edit_sloc_status = $mform !== null ? ($mform['submit_location_status'] ?? null) : null;
+                    $edit_sloc_dist   = ($mform !== null && isset($mform['submit_distance_m']) && $mform['submit_distance_m'] !== null)
+                        ? (int)$mform['submit_distance_m'] : null;
+                    $edit_has_coords  = $mform !== null && !empty($mform['submit_lat']) && !empty($mform['submit_lon']);
+                    ?>
+                    <tr>
+                        <td>Submission location <span style='color:#888; font-weight:400;'>(admin only)</span></td>
+                        <td>
+                            <?php if ($edit_sloc_status === 'on_site'): ?>
+                                <span class='badge badge-completed loc-badge'>&#10003; Submitted on site &mdash; <?php echo htmlspecialchars(format_distance($edit_sloc_dist)); ?> from tower</span>
+                            <?php elseif ($edit_sloc_status === 'away'): ?>
+                                <span class='badge badge-critical loc-badge'>&#9888; Submitted <?php echo htmlspecialchars(format_distance($edit_sloc_dist)); ?> from site &mdash; possible off-site upload</span>
+                            <?php else: ?>
+                                <span class='badge loc-badge' style='background:#e9ecef;color:#555;'>Location not captured (GPS was off)</span>
+                            <?php endif; ?>
+                            <?php if ($edit_has_coords): ?>
+                                <br>
+                                <a href='https://maps.google.com/?q=<?php echo rawurlencode($mform['submit_lat'] . ',' . $mform['submit_lon']); ?>'
+                                   target='_blank' class='btn btn-secondary btn-map' style='margin-top:6px; font-size:12px; padding:4px 12px;'>View on map</a>
+                                <span style='color:#aaa; font-size:11px;'><?php echo htmlspecialchars($mform['submit_lat'] . ', ' . $mform['submit_lon']); ?> &mdash; captured from device, not editable</span>
+                            <?php endif; ?>
+                        </td>
                     </tr>
                 </table>
             </div>
@@ -492,4 +554,5 @@ include 'incl/header.php';
         </form>
         <?php endif; ?>
 
+<?php include 'incl/lightbox.php'; ?>
 <?php include 'incl/footer.php'; ?>

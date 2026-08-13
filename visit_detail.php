@@ -48,19 +48,70 @@ if ($mform) {
     }
 }
 
-// ── Build an activity log from the visit's timestamped events ─────────────────
+// ── Photos uploaded for this visit, grouped into upload batches ───────────────
+$photo_groups = []; // uploaded_at => ['count'=>n, 'caps'=>[...], 'by'=>uploader name]
+$pstmt = $conn->prepare("
+    SELECT p.uploaded_at, p.caption, up.first_name AS up_first, up.last_name AS up_last
+    FROM visit_photos p
+    JOIN users up ON up.user_id = p.uploaded_by_user_id
+    WHERE p.visit_id = ?
+    ORDER BY p.uploaded_at
+");
+$pstmt->bind_param('i', $visit_id);
+$pstmt->execute();
+$pres = $pstmt->get_result();
+while ($p = $pres->fetch_assoc()) {
+    $k = $p['uploaded_at'];
+    if (!isset($photo_groups[$k])) {
+        $photo_groups[$k] = ['count' => 0, 'caps' => [], 'by' => trim($p['up_first'] . ' ' . $p['up_last'])];
+    }
+    $photo_groups[$k]['count']++;
+    if (trim((string) $p['caption']) !== '') $photo_groups[$k]['caps'][] = trim($p['caption']);
+}
+$pstmt->close();
+
+// ── Build a richer activity log from the visit's timestamped events ───────────
 $creator_name = trim($visit['creator_first'] . ' ' . $visit['creator_last']);
-$tech_name     = trim($visit['tech_first'] . ' ' . $visit['tech_last']);
+$tech_name    = trim($visit['tech_first'] . ' ' . $visit['tech_last']);
+$self_started = ((int) $visit['created_by_user_id'] === (int) $visit['assigned_to_user_id']);
 
 $events = [];
-$events[] = ['t' => $visit['created_at'], 'title' => 'Visit created', 'by' => $creator_name];
 
-// maintenance report saves / submission
+// 1. Visit created / self-started
+if ($self_started) {
+    $events[] = ['t' => $visit['created_at'], 'type' => 'start',
+                 'title' => 'Visit started by technician', 'by' => $tech_name,
+                 'detail' => 'Technician picked this site — no office assignment needed.'];
+} else {
+    $events[] = ['t' => $visit['created_at'], 'type' => 'created',
+                 'title' => 'Visit created & assigned to ' . $tech_name, 'by' => $creator_name,
+                 'detail' => ($visit['description'] ?? '') !== '' ? 'Instructions: ' . $visit['description'] : ''];
+}
+
+// 2. Photo upload batches
+foreach ($photo_groups as $t => $g) {
+    $n = $g['count'];
+    $events[] = ['t' => $t, 'type' => 'photo',
+                 'title' => $n . ' site photo' . ($n === 1 ? '' : 's') . ' uploaded',
+                 'by' => $g['by'],
+                 'detail' => !empty($g['caps']) ? 'Captions: ' . implode('; ', $g['caps']) : ''];
+}
+
+// 3. Maintenance report draft save + final submission
 if ($mform) {
-    if (!empty($mform['is_submitted']) && !empty($mform['submitted_at'])) {
-        $events[] = ['t' => $mform['submitted_at'], 'title' => 'Maintenance report submitted', 'by' => $tech_name];
-    } elseif (!empty($mform['updated_at'])) {
-        $events[] = ['t' => $mform['updated_at'], 'title' => 'Maintenance report saved (draft)', 'by' => $tech_name];
+    $submitted = !empty($mform['is_submitted']) && !empty($mform['submitted_at']);
+    // Draft save, only when it's distinct from the final submit
+    if (!empty($mform['updated_at']) && (!$submitted || $mform['updated_at'] < $mform['submitted_at'])) {
+        $events[] = ['t' => $mform['updated_at'], 'type' => 'draft',
+                     'title' => 'Maintenance report saved as draft', 'by' => $tech_name, 'detail' => ''];
+    }
+    if ($submitted) {
+        $fdetail = $fault_count > 0
+            ? $fault_count . ' faulty item' . ($fault_count === 1 ? '' : 's') . ' flagged'
+            : 'No faults flagged';
+        $events[] = ['t' => $mform['submitted_at'], 'type' => 'submitted',
+                     'title' => 'Maintenance report submitted — visit completed',
+                     'by' => $tech_name, 'detail' => $fdetail];
     }
 }
 
@@ -88,6 +139,7 @@ include 'incl/header.php';
             <p><strong>Type:</strong> <?php echo htmlspecialchars($visit['visit_type']); ?></p>
             <p><strong>Location:</strong> <?php echo htmlspecialchars($visit['location']); ?></p>
             <p><strong>Assigned to:</strong> <?php echo htmlspecialchars($visit['tech_first'] . ' ' . $visit['tech_last']); ?></p>
+            <p><strong>Origin:</strong> <?php echo visit_origin_badge((int)$visit['created_by_user_id'], (int)$visit['assigned_to_user_id']); ?></p>
             <p><strong>Scheduled:</strong> <?php echo fmt_date($visit['scheduled_date']); ?></p>
             <p><strong>Created by:</strong> <?php echo htmlspecialchars($visit['creator_first'] . ' ' . $visit['creator_last']); ?> on <?php echo fmt_datetime($visit['created_at']); ?></p>
             <?php if ($visit['completed_at']): ?>
@@ -139,9 +191,11 @@ include 'incl/header.php';
                     <div class='timeline-row<?php echo $i === 0 ? ' latest' : ''; ?>'>
                         <div class='timeline-when'><?php echo fmt_datetime($ev['t']); ?></div>
                         <div class='timeline-what'>
+                            <span class='tl-dot tl-<?php echo htmlspecialchars($ev['type'] ?? 'created'); ?>'></span>
                             <?php echo htmlspecialchars($ev['title']); ?>
                             <?php if ($ev['by']): ?><span class='timeline-who'>— <?php echo htmlspecialchars($ev['by']); ?></span><?php endif; ?>
                             <?php if ($i === 0): ?><span class='timeline-latest'>Latest</span><?php endif; ?>
+                            <?php if (!empty($ev['detail'])): ?><div class='timeline-detail'><?php echo htmlspecialchars($ev['detail']); ?></div><?php endif; ?>
                         </div>
                     </div>
                     <?php endforeach; ?>

@@ -408,7 +408,7 @@ CREATE TABLE `visits` (
   `visit_type` varchar(120) NOT NULL,
   `description` text,
   `scheduled_date` date DEFAULT NULL,
-  `maintenance_type` enum('active','passive') NOT NULL DEFAULT 'active',
+  `maintenance_type` enum('active','passive','housekeeping') NOT NULL DEFAULT 'active',
   `status` enum('assigned','in_progress','completed') NOT NULL DEFAULT 'assigned',
   `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `completed_at` datetime DEFAULT NULL,

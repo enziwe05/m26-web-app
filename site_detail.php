@@ -32,6 +32,33 @@ if (!$site) {
     error_page('Site not found', 'That site may have been removed or the link is wrong.', 'view_sites.php', 'Back to sites');
 }
 
+// ── "Last checked" status ─────────────────────────────────────────────────────
+// Most recent COMPLETED visit + who did it, plus the configured maintenance cycle.
+$stmt = $conn->prepare("
+    SELECT v.completed_at, u.first_name, u.last_name
+    FROM visits v
+    JOIN users u ON u.user_id = v.assigned_to_user_id
+    WHERE v.site_id = ? AND v.status = 'completed'
+    ORDER BY v.completed_at DESC
+    LIMIT 1
+");
+$stmt->bind_param('i', $site_id);
+$stmt->execute();
+$last_check = $stmt->get_result()->fetch_assoc();  // null when never visited
+$stmt->close();
+
+$cycle_days = (int) ($conn->query(
+    "SELECT stale_days FROM payroll_settings WHERE id = 1"
+)->fetch_assoc()['stale_days'] ?? 120);
+if ($cycle_days < 1) $cycle_days = 120;
+
+$last_days = ($last_check && $last_check['completed_at'])
+    ? (int) floor((time() - strtotime($last_check['completed_at'])) / 86400)
+    : null;
+$last_never  = $last_days === null;
+$last_urgent = $last_never || $last_days >= $cycle_days * 2;
+$last_stale  = $last_never || $last_days >= $cycle_days;   // behind the cycle
+
 // Visit history for this site
 $stmt = $conn->prepare("
     SELECT v.visit_id, v.visit_type, v.status, v.scheduled_date, v.completed_at,
@@ -79,6 +106,39 @@ include 'incl/header.php';
         <div class='page-heading'>
             <h1><?php echo htmlspecialchars($site['site_name']); ?></h1>
             <a href='create_visit.php?site_id=<?php echo $site_id; ?>' class='btn btn-primary'>+ Create Visit</a>
+        </div>
+
+        <?php
+        // Traffic-light "last checked" banner — the first thing you should see.
+        if ($last_never) {
+            $bg = '#fff5f5'; $bar = '#dc3545'; $dot = '#dc3545'; $word = 'Never checked';
+        } elseif ($last_urgent) {
+            $bg = '#fff5f5'; $bar = '#dc3545'; $dot = '#dc3545'; $word = 'Urgent';
+        } elseif ($last_stale) {
+            $bg = '#fffbf0'; $bar = '#e0a800'; $dot = '#e0a800'; $word = 'Overdue';
+        } else {
+            $bg = '#f0fff4'; $bar = '#28a745'; $dot = '#28a745'; $word = 'Up to date';
+        }
+        $by = ($last_check && !$last_never)
+            ? ' by ' . htmlspecialchars(trim($last_check['first_name'] . ' ' . $last_check['last_name']))
+            : '';
+        ?>
+        <div class='card' style='background:<?php echo $bg; ?>; border-left:5px solid <?php echo $bar; ?>; display:flex; align-items:center; gap:12px;'>
+            <span style='width:12px; height:12px; border-radius:50%; background:<?php echo $dot; ?>; flex:none;'></span>
+            <div>
+                <div style='font-size:17px; font-weight:600; color:#1a3a5c;'>
+                    Last checked: <?php echo $last_never ? 'Never' : htmlspecialchars(human_ago($last_days)); ?>
+                    <span style='font-weight:400; color:#666; font-size:14px;'>— <?php echo $word; ?></span>
+                </div>
+                <div style='color:#666; font-size:13px;'>
+                    <?php if ($last_never): ?>
+                        This site has no completed visit on record. It should be maintained every <?php echo round($cycle_days / 30); ?> months.
+                    <?php else: ?>
+                        <?php echo fmt_date($last_check['completed_at']) . $by; ?>.
+                        Sites should be checked every <?php echo round($cycle_days / 30); ?> months.
+                    <?php endif; ?>
+                </div>
+            </div>
         </div>
 
         <div class='card'>

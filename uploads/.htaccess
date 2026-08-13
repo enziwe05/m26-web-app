@@ -1,7 +1,22 @@
 # Defense in depth: never run scripts from the uploads directory.
 # Even if a disguised script were uploaded, it can only be downloaded, not executed.
-php_flag engine off
 
+# NOTE: `php_flag` is ONLY valid when PHP runs as the Apache module (mod_php).
+# Under PHP-FPM / CGI (e.g. the Virtualmin production server) an unguarded
+# `php_flag` line causes a 500 Internal Server Error on EVERY file in this
+# folder — including images. Guard it with <IfModule> so it applies only where
+# mod_php is loaded, and rely on the FilesMatch block below everywhere else.
+<IfModule mod_php.c>
+    php_flag engine off
+</IfModule>
+<IfModule mod_php7.c>
+    php_flag engine off
+</IfModule>
+<IfModule mod_php5.c>
+    php_flag engine off
+</IfModule>
+
+# Blocks scripts from being served/executed regardless of PHP mode (FPM-safe).
 <FilesMatch "\.(php|php3|php4|php5|php7|phtml|phar|pl|py|cgi|sh|asp|aspx)$">
     Require all denied
 </FilesMatch>

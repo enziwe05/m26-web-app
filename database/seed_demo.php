@@ -1,269 +1,632 @@
 <?php
 /*
- * M26 — Demo data seeder (for walkthroughs).
+ * M26 Demo Data Seeder v2 — database/seed_demo.php
  *
- * Safe to re-run: it removes its own previously-seeded rows first (visits are
- * tagged "[DEMO]" in the description; vehicle/client rows are matched by a known
- * registration/name) and recreates a consistent demo dataset.
+ * CLI:
+ *   php database/seed_demo.php          — seed ~250 visits, time entries, vehicles
+ *   php database/seed_demo.php clear    — remove ONLY demo data (FK-safe order)
  *
- * Run from a terminal:   php database/seed_demo.php
- * (Requires MySQL/MAMP running.)
+ * Browser (admin only):
+ *   /database/seed_demo.php?action=seed   — seed
+ *   /database/seed_demo.php?action=clear  — clear
  *
- * Demo logins it creates (password for all:  demo1234):
- *     mtn  → MTN client portal
- *     esm  → Eswatini Mobile client portal
+ * Demo row markers:
+ *   visits.description           LIKE '%[demo]%'
+ *   time_entries.location_flag   LIKE 'demo%'
+ *   vehicles.fleet_number        LIKE 'FL-%'  (inspections cascade)
  */
 
-mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
-$conn = new mysqli('localhost', 'root', 'root', 'm26');
-$conn->set_charset('utf8');
+$cli = (PHP_SAPI === 'cli');
 
-$BASE = dirname(__DIR__);
-$form_sections     = require $BASE . '/incl/form_sections.php';
-$vehicle_checklist = require $BASE . '/incl/vehicle_checklist.php';
+// Ensure cwd = app root so require_once paths resolve correctly
+chdir(dirname(__DIR__));
 
-function say($m) { echo $m . PHP_EOL; }
+require_once 'incl/dbconn.php';
+require_once 'incl/geo.php';
 
-// ── People ──────────────────────────────────────────────────────────────────────
-$admin_id = (int)$conn->query("SELECT user_id FROM users WHERE role='admin' ORDER BY user_id LIMIT 1")->fetch_assoc()['user_id'];
-$techs = [];
-$r = $conn->query("SELECT user_id FROM users WHERE role='employee' AND status='active' ORDER BY user_id LIMIT 6");
-while ($row = $r->fetch_assoc()) $techs[] = (int)$row['user_id'];
-if (!$admin_id || count($techs) < 2) { exit("Need at least 1 admin and 2 employees in the database first.\n"); }
-
-// A known-password demo technician (so the field-tech flow can be shown live).
-// Prepended to $techs so it receives several demo visits + inspections.
-function ensure_tech(mysqli $conn): int {
-    $hash = password_hash('demo1234', PASSWORD_BCRYPT);
-    $stmt = $conn->prepare("SELECT user_id FROM users WHERE username='tech'");
-    $stmt->execute(); $row = $stmt->get_result()->fetch_assoc(); $stmt->close();
-    if ($row) {
-        $uid = (int)$row['user_id'];
-        $u = $conn->prepare("UPDATE users SET password_hash=?, role='employee', status='active' WHERE user_id=?");
-        $u->bind_param('si', $hash, $uid); $u->execute(); $u->close();
-        return $uid;
-    }
-    $u = $conn->prepare("INSERT INTO users (first_name,last_name,username,password_hash,role,team) VALUES ('Demo','Tech','tech',?,'employee','Field Team A')");
-    $u->bind_param('s', $hash); $u->execute(); $uid = $u->insert_id; $u->close();
-    return $uid;
+if (!$cli) {
+    // Browser: admin-only gate
+    require_admin();
+    header('Content-Type: text/html; charset=utf-8');
+    echo "<!DOCTYPE html><html><head><title>M26 Seed</title>"
+       . "<link rel='stylesheet' href='../css/styles.css?v=24'></head>"
+       . "<body><div style='max-width:800px;margin:40px auto;padding:0 20px;font-family:monospace;font-size:13px;'>\n";
 }
-$demo_tech = ensure_tech($conn);
-array_unshift($techs, $demo_tech);   // demo tech becomes index 0
-say("Using admin #$admin_id and " . count($techs) . " technicians (incl. demo 'tech').");
 
-// ── Site pools per operator ─────────────────────────────────────────────────────
-function site_pool(mysqli $conn, string $cond, int $limit): array {
-    $ids = [];
-    $r = $conn->query("SELECT site_id FROM sites WHERE $cond ORDER BY site_id LIMIT $limit");
-    while ($row = $r->fetch_assoc()) $ids[] = (int)$row['site_id'];
-    return $ids;
-}
-$mtn_sites = site_pool($conn, "notes LIKE '%MTN%'", 6);
-$esm_sites = site_pool($conn, "(notes LIKE '%Eswatini Mobile%' OR notes LIKE '%Swazi Mobile%' OR notes LIKE '%ESM%')", 6);
-say("MTN sites: " . count($mtn_sites) . " | ESM sites: " . count($esm_sites));
-
-// ════════════════════════════════════════════════════════════════════════════════
-// 1) CLIENTS  (MTN + Eswatini Mobile) with read-only portal logins
-// ════════════════════════════════════════════════════════════════════════════════
-function ensure_client(mysqli $conn, string $name, string $key): int {
-    $stmt = $conn->prepare("SELECT client_id FROM clients WHERE name=?");
-    $stmt->bind_param('s', $name); $stmt->execute();
-    $row = $stmt->get_result()->fetch_assoc(); $stmt->close();
-    if ($row) {
-        $cid = (int)$row['client_id'];
-        $u = $conn->prepare("UPDATE clients SET match_keyword=?, status='active' WHERE client_id=?");
-        $u->bind_param('si', $key, $cid); $u->execute(); $u->close();
-        return $cid;
-    }
-    $stmt = $conn->prepare("INSERT INTO clients (name, match_keyword) VALUES (?, ?)");
-    $stmt->bind_param('ss', $name, $key); $stmt->execute();
-    $cid = $stmt->insert_id; $stmt->close();
-    return $cid;
-}
-function ensure_login(mysqli $conn, string $username, string $display, int $client_id): void {
-    $hash = password_hash('demo1234', PASSWORD_BCRYPT);
-    $stmt = $conn->prepare("SELECT user_id FROM users WHERE username=?");
-    $stmt->bind_param('s', $username); $stmt->execute();
-    $row = $stmt->get_result()->fetch_assoc(); $stmt->close();
-    if ($row) {
-        $u = $conn->prepare("UPDATE users SET password_hash=?, role='client', client_id=?, first_name=?, status='active' WHERE user_id=?");
-        $uid = (int)$row['user_id'];
-        $u->bind_param('sisi', $hash, $client_id, $display, $uid); $u->execute(); $u->close();
+// ── Output helper ──────────────────────────────────────────────────────────────
+function out(string $line): void
+{
+    if (PHP_SAPI === 'cli') {
+        echo $line . PHP_EOL;
     } else {
-        $last = '';
-        $u = $conn->prepare("INSERT INTO users (first_name,last_name,username,password_hash,role,client_id) VALUES (?,?,?,?,'client',?)");
-        $u->bind_param('ssssi', $display, $last, $username, $hash, $client_id); $u->execute(); $u->close();
+        echo htmlspecialchars($line) . "<br>\n";
+        @ob_flush(); @flush();
     }
 }
-$mtn_cid = ensure_client($conn, 'MTN Eswatini', 'mtn');
-$esm_cid = ensure_client($conn, 'Eswatini Mobile', 'esm');
-ensure_login($conn, 'mtn', 'MTN Eswatini', $mtn_cid);
-ensure_login($conn, 'esm', 'Eswatini Mobile', $esm_cid);
-say("Clients ready: MTN (login mtn) + Eswatini Mobile (login esm) — password demo1234");
 
-// ════════════════════════════════════════════════════════════════════════════════
-// 2) VEHICLES + daily inspections
-// ════════════════════════════════════════════════════════════════════════════════
-$vehicles = [
-    ['SD 411 AM', 'Toyota Hilux',        'M26-01'],
-    ['SD 087 BG', 'Ford Ranger',         'M26-02'],
-    ['SD 762 CH', 'Toyota Land Cruiser', 'M26-03'],
-    ['SD 233 DM', 'Isuzu D-Max',         'M26-04'],
-];
-$veh_ids = [];
-foreach ($vehicles as [$reg, $make, $fleet]) {
-    $stmt = $conn->prepare("SELECT vehicle_id FROM vehicles WHERE registration=?");
-    $stmt->bind_param('s', $reg); $stmt->execute();
-    $row = $stmt->get_result()->fetch_assoc(); $stmt->close();
-    if ($row) { $veh_ids[] = (int)$row['vehicle_id']; continue; }
-    $stmt = $conn->prepare("INSERT INTO vehicles (make, fleet_number, registration) VALUES (?,?,?)");
-    $stmt->bind_param('sss', $make, $fleet, $reg); $stmt->execute();
-    $veh_ids[] = $stmt->insert_id; $stmt->close();
+// ── Mode ───────────────────────────────────────────────────────────────────────
+$mode = 'seed';
+if ($cli) {
+    $mode = in_array('clear', array_slice($argv ?? [], 1)) ? 'clear' : 'seed';
+} else {
+    $mode = ($_GET['action'] ?? 'seed') === 'clear' ? 'clear' : 'seed';
 }
-say("Vehicles ready: " . count($veh_ids));
 
-// Build a vehicle-inspection items_json with optional issues, returns [json, overall]
-function vehicle_items(array $vc, array $issues): array {
-    $out = []; $worst = 'ok';
-    foreach ($vc as $sk => $sec) {
-        foreach ($sec['fields'] as $fk => $fl) {
-            $st = $issues[$sk][$fk]['status']  ?? 'ok';
-            $rm = $issues[$sk][$fk]['remarks'] ?? '';
-            $out[$sk][$fk] = ['status' => $st, 'remarks' => $rm];
-            if ($st === 'critical') $worst = 'critical';
-            elseif ($st === 'attention' && $worst !== 'critical') $worst = 'attention';
-        }
+// ══════════════════════════════════════════════════════════════════════════════
+//  CLEAR MODE
+// ══════════════════════════════════════════════════════════════════════════════
+if ($mode === 'clear') {
+    out('=== CLEAR: removing demo data ===');
+
+    // 1. Photos attached to demo visits
+    $conn->query(
+        "DELETE vp FROM visit_photos vp
+           JOIN visits v ON v.visit_id = vp.visit_id
+          WHERE v.description LIKE '%[demo]%'"
+    );
+    out('  visit_photos deleted:       ' . $conn->affected_rows);
+
+    // 2. Maintenance forms for demo visits
+    $conn->query(
+        "DELETE mf FROM maintenance_forms mf
+           JOIN visits v ON v.visit_id = mf.visit_id
+          WHERE v.description LIKE '%[demo]%'"
+    );
+    out('  maintenance_forms deleted:  ' . $conn->affected_rows);
+
+    // 3. Demo visits (cascade keeps real visit 31/33)
+    $conn->query("DELETE FROM visits WHERE description LIKE '%[demo]%'");
+    out('  visits deleted:             ' . $conn->affected_rows);
+
+    // 4. Demo time entries (tagged location_flag LIKE 'demo%')
+    $conn->query("DELETE FROM time_entries WHERE location_flag LIKE 'demo%'");
+    out('  time_entries deleted:       ' . $conn->affected_rows);
+
+    // 5. Demo vehicles (fleet FL-*) — inspections removed first
+    $conn->query(
+        "DELETE vi FROM vehicle_inspections vi
+           JOIN vehicles v ON v.vehicle_id = vi.vehicle_id
+          WHERE v.fleet_number LIKE 'FL-%'"
+    );
+    out('  vehicle_inspections deleted:' . $conn->affected_rows);
+    $conn->query("DELETE FROM vehicles WHERE fleet_number LIKE 'FL-%'");
+    out('  vehicles deleted:           ' . $conn->affected_rows);
+
+    out('=== CLEAR COMPLETE ===');
+    if (!$cli) echo "</div></body></html>\n";
+    exit;
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  SEED MODE
+// ══════════════════════════════════════════════════════════════════════════════
+out('=== M26 DEMO SEEDER v2 — starting ===');
+
+// Reproducible randomness
+mt_srand(20260722);
+
+// ── Fixed date constants ───────────────────────────────────────────────────────
+// "Today" fixed at 2026-07-22
+$today_ts     = mktime(0, 0, 0, 7, 22, 2026);
+$today_str    = '2026-07-22';
+
+// Visit window: 9 weeks back
+$visit_start_ts = $today_ts - (9 * 7 * 86400);  // 2026-05-20
+
+// Time-entry window: 8 weeks back
+$te_start_ts    = $today_ts - (8 * 7 * 86400);  // 2026-05-27
+
+$june_start = '2026-06-01';
+$june_end   = '2026-06-30';
+
+// ── Users ──────────────────────────────────────────────────────────────────────
+$employee_ids = [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 20];
+$admin_id     = 1;
+
+// 4 night-shift workers
+$night_ids    = [3, 9, 14, 18];
+
+$visit_types  = ['Maintenance', 'Emergency Repair', 'Installation', 'Site Inspection', 'Other'];
+$maint_types  = ['active', 'passive'];   // DB enum; 'housekeeping' not in enum yet
+
+// ──────────────────────────────────────────────────────────────────────────────
+// STEP 1: Set shift_types on all 17 employees
+// ──────────────────────────────────────────────────────────────────────────────
+out('');
+out('STEP 1 — Employee shift types');
+
+$emp_shift  = [];  // uid => 'day'|'night'
+
+foreach ($employee_ids as $uid) {
+    $shift  = in_array($uid, $night_ids, true) ? 'night' : 'day';
+
+    $emp_shift[$uid]  = $shift;
+
+    $s = $conn->prepare("UPDATE users SET shift_type=? WHERE user_id=?");
+    $s->bind_param('si', $shift, $uid);
+    $s->execute();
+    $s->close();
+}
+out('  Updated ' . count($employee_ids) . ' employees.');
+
+// ──────────────────────────────────────────────────────────────────────────────
+// STEP 2: Demo photo stubs — copy images/m26.png to uploads/demo_site_N.jpg
+// ──────────────────────────────────────────────────────────────────────────────
+out('');
+out('STEP 2 — Demo photo stubs');
+
+$demo_photos = [];
+for ($i = 1; $i <= 5; $i++) {
+    $fn   = "demo_site_{$i}.jpg";
+    $dest = 'uploads/' . $fn;
+    if (file_exists('images/m26.png') && !file_exists($dest)) {
+        copy('images/m26.png', $dest);
     }
-    return [json_encode($out), $worst];
-}
-
-function upsert_inspection(mysqli $conn, int $vid, int $driver, string $date, int $odo, array $vc, array $issues): void {
-    [$json, $overall] = vehicle_items($vc, $issues);
-    // Compose a human repair note from any item remarks
-    $notes = [];
-    foreach ($issues as $sk => $fields) foreach ($fields as $fk => $d) if (!empty($d['remarks'])) $notes[] = $d['remarks'];
-    $repair = $notes ? implode('; ', $notes) : '';
-    $stmt = $conn->prepare("
-        INSERT INTO vehicle_inspections (vehicle_id, driver_user_id, inspection_date, odometer_km, overall_status, repair_request, items_json)
-        VALUES (?,?,?,?,?,?,?)
-        ON DUPLICATE KEY UPDATE driver_user_id=VALUES(driver_user_id), odometer_km=VALUES(odometer_km),
-            overall_status=VALUES(overall_status), repair_request=VALUES(repair_request), items_json=VALUES(items_json)
-    ");
-    $stmt->bind_param('iisisss', $vid, $driver, $date, $odo, $overall, $repair, $json);
-    $stmt->execute(); $stmt->close();
-}
-
-// Issue presets to vary the week
-$clean      = [];
-$tyre_warn  = ['tyres'  => ['pressure'      => ['status' => 'attention', 'remarks' => 'Front-left tyre low, needs topping up']]];
-$brake_crit = ['brakes' => ['brake_fluid_level' => ['status' => 'critical', 'remarks' => 'Brake fluid below minimum — book service']]];
-$light_warn = ['lights' => ['brake_lights'  => ['status' => 'attention', 'remarks' => 'Right brake light intermittent']]];
-
-$odo = [84230, 102400, 56120, 73900];
-for ($d = 4; $d >= 0; $d--) {
-    $date = date('Y-m-d', strtotime("-$d days"));
-    foreach ($veh_ids as $i => $vid) {
-        // Leave the 4th vehicle UN-inspected today so the "not inspected today" alert shows
-        if ($d === 0 && $i === 3) continue;
-        $driver = $techs[$i % count($techs)];
-        $issues = $clean;
-        if     ($i === 1 && $d === 2) $issues = $tyre_warn;
-        elseif ($i === 0 && $d === 0) $issues = $light_warn;
-        elseif ($i === 2 && $d === 1) $issues = $brake_crit;
-        upsert_inspection($conn, $vid, $driver, $date, $odo[$i] + (4 - $d) * 35, $vehicle_checklist, $issues);
+    if (file_exists($dest)) {
+        $demo_photos[] = $fn;
     }
 }
-say("Vehicle inspections seeded for the last 5 days (one vehicle left unchecked today).");
+out('  Photo stubs ready: ' . count($demo_photos));
 
-// ════════════════════════════════════════════════════════════════════════════════
-// 3) VISITS (+ checklist items + submitted maintenance reports with faults)
-// ════════════════════════════════════════════════════════════════════════════════
-// Remove any prior demo visits (cascade clears their items/forms/photos)
-$conn->query("DELETE FROM visits WHERE description LIKE '[DEMO]%'");
+// ──────────────────────────────────────────────────────────────────────────────
+// STEP 3: ~250 demo visits over 9 weeks
+// ──────────────────────────────────────────────────────────────────────────────
+out('');
+out('STEP 3 — Creating ~250 demo visits');
 
-// Build all six section JSONs: everything OK, then override given faults.
-// $faults = ['security' => ['fence_locks' => 'Padlock broken'], ...]
-function section_jsons(array $form_sections, array $faults): array {
-    $cols = [];
-    foreach ($form_sections as $sec_key => $sec) {
-        $data = [];
-        foreach ($sec['fields'] as $fk => $fl) $data[$fk] = ['status' => 'OK', 'remarks' => ''];
-        foreach (($faults[$sec_key] ?? []) as $fk => $rem) {
-            if (isset($data[$fk])) $data[$fk] = ['status' => 'Faulty', 'remarks' => $rem];
-        }
-        $cols[$sec_key] = json_encode($data);
-    }
-    return $cols;
+// All sites that have valid coordinates
+$site_rows = $conn->query(
+    "SELECT site_id, latitude, longitude FROM sites
+     WHERE latitude  IS NOT NULL AND latitude  != ''
+       AND longitude IS NOT NULL AND longitude != ''
+       AND CAST(latitude AS DECIMAL(10,7)) != 0
+     ORDER BY site_id"
+)->fetch_all(MYSQLI_ASSOC);
+
+if (empty($site_rows)) {
+    out('ERROR: No sites with coordinates. Aborting.');
+    exit(1);
 }
+out('  ' . count($site_rows) . ' sites with coordinates available.');
 
-function add_maint_form(mysqli $conn, array $form_sections, int $visit_id, array $faults, string $comments, string $submitted_at): void {
-    $c = section_jsons($form_sections, $faults);
-    $stmt = $conn->prepare("
-        INSERT INTO maintenance_forms
-            (visit_id, access_ref, capture_lat, capture_lon, capture_time,
-             ant_s1_azimuth, ant_s1_etilt, ant_s1_mtilt, ant_s1_height,
-             equipment_json, generator_json, transmission_json, security_json, container_json, electrical_json,
-             general_comments, is_submitted, submitted_at, updated_at)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,?,?)
-    ");
-    $access = 'AR-' . rand(100, 999);
-    $lat = '-26.' . rand(100000, 999999); $lon = '31.' . rand(100000, 999999); $ctime = sprintf('%02d:%02d', rand(8, 16), rand(0, 59));
-    $az = (string)rand(0, 350); $et = (string)rand(0, 8); $mt = (string)rand(0, 4); $ht = (string)rand(20, 45);
-    // types: visit_id(i) + 17 strings
-    $stmt->bind_param('i' . str_repeat('s', 17),
-        $visit_id, $access, $lat, $lon, $ctime, $az, $et, $mt, $ht,
-        $c['equipment'], $c['generator'], $c['transmission'], $c['security'], $c['container'], $c['electrical'],
-        $comments, $submitted_at, $submitted_at);
-    $stmt->execute(); $stmt->close();
-}
+// Status spread: 70 % completed, 15 % in_progress, 15 % assigned
+$statuses = array_merge(
+    array_fill(0, 175, 'completed'),
+    array_fill(0,  38, 'in_progress'),
+    array_fill(0,  37, 'assigned')
+);
+shuffle($statuses);
 
-/*
- * Visit plan: [site_id, tech_index, status, days_offset, faults[], comments]
- * status: assigned | in_progress | completed
- */
-$plan = [];
-// MTN completed visits (with faults → show on Faults page + MTN portal report)
-if (isset($mtn_sites[0])) $plan[] = [$mtn_sites[0], 0, 'completed', -9, ['security'=>['fence_locks'=>'Perimeter gate padlock broken'], 'transmission'=>['fiber'=>'Fiber patch cord damaged']], 'Padlock and fiber patch flagged for follow-up.'];
-if (isset($mtn_sites[1])) $plan[] = [$mtn_sites[1], 1, 'completed', -5, ['equipment'=>['presence_of_dust'=>'Heavy dust build-up in cabinet']], 'Cabinet cleaned; recommend more frequent visits.'];
-if (isset($mtn_sites[2])) $plan[] = [$mtn_sites[2], 2, 'in_progress', -1, [], ''];
-if (isset($mtn_sites[3])) $plan[] = [$mtn_sites[3], 0, 'assigned',   3, [], ''];
-// ESM completed + in-progress
-if (isset($esm_sites[0])) $plan[] = [$esm_sites[0], 1, 'completed', -7, ['generator'=>['battery_charger'=>'Charger not holding voltage']], 'Generator charger faulty — quoted for replacement.'];
-if (isset($esm_sites[1])) $plan[] = [$esm_sites[1], 2, 'completed', -3, [], 'All systems healthy.'];
-if (isset($esm_sites[2])) $plan[] = [$esm_sites[2], 0, 'in_progress', 0, [], ''];
-if (isset($esm_sites[3])) $plan[] = [$esm_sites[3], 1, 'assigned',   2, [], ''];
+// Visit INSERT (10 params: iiisssssss)
+$vi = $conn->prepare(
+    "INSERT INTO visits
+     (site_id, assigned_to_user_id, created_by_user_id,
+      visit_type, maintenance_type, description,
+      scheduled_date, status, created_at, completed_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+);
 
-$mtypes = ['active', 'passive'];
-$made = 0;
-foreach ($plan as $p) {
-    [$site_id, $ti, $status, $off, $faults, $comments] = $p;
-    $tech = $techs[$ti % count($techs)];
-    $sched = date('Y-m-d', strtotime("$off days"));
-    $vtype = 'Preventive Maintenance';
-    $mtype = $mtypes[$made % 2];
-    $created = date('Y-m-d H:i:s', strtotime("$off days -2 hours"));
-    $completed_at = $status === 'completed' ? date('Y-m-d H:i:s', strtotime("$off days +6 hours")) : null;
-    $desc = '[DEMO] Routine maintenance';
+$visit_meta  = [];  // vid => [site_lat, site_lon, assigned_uid, status, completed_at]
+$count_v     = 0;
+$n_target    = count($statuses);   // 250
 
-    $stmt = $conn->prepare("
-        INSERT INTO visits (site_id, assigned_to_user_id, created_by_user_id, visit_type, description, scheduled_date, maintenance_type, status, created_at, completed_at)
-        VALUES (?,?,?,?,?,?,?,?,?,?)
-    ");
-    // types: site_id(i) tech(i) admin(i) + 7 strings = 10
-    $stmt->bind_param('iii' . str_repeat('s', 7), $site_id, $tech, $admin_id, $vtype, $desc, $sched, $mtype, $status, $created, $completed_at);
-    $stmt->execute();
-    $vid = $stmt->insert_id;
-    $stmt->close();
+for ($i = 0; $i < $n_target; $i++) {
+    $site   = $site_rows[mt_rand(0, count($site_rows) - 1)];
+    $uid    = $employee_ids[mt_rand(0, count($employee_ids) - 1)];
+    $vtype  = $visit_types[mt_rand(0, count($visit_types) - 1)];
+    $mtype  = $maint_types[mt_rand(0, 1)];
+    $status = $statuses[$i];
 
+    // Scheduled between visit_start and (today - 1 day)
+    $sched_ts   = mt_rand($visit_start_ts, $today_ts - 86400);
+    $sched_date = date('Y-m-d', $sched_ts);
+    $created_at = date('Y-m-d H:i:s', $sched_ts - mt_rand(0, 3 * 86400));
+
+    $completed_at = null;
     if ($status === 'completed') {
-        add_maint_form($conn, $form_sections, $vid, $faults, $comments, date('Y-m-d H:i:s', strtotime("$off days +6 hours")));
+        $ct = min($sched_ts + mt_rand(3600, 3 * 86400), $today_ts);
+        $completed_at = date('Y-m-d H:i:s', $ct);
     }
-    $made++;
-}
-say("Visits seeded: $made (with maintenance reports).");
 
-say("");
-say("✔ Demo data ready.  All demo passwords:  demo1234");
-say("  Technician login:  tech");
-say("  Client logins:     mtn  |  esm");
-$conn->close();
+    $desc = '[demo] ' . $vtype . ' (site ' . $site['site_id'] . ')';
+
+    $vi->bind_param(
+        'iiisssssss',
+        $site['site_id'], $uid, $admin_id,
+        $vtype, $mtype, $desc,
+        $sched_date, $status, $created_at, $completed_at
+    );
+    $vi->execute();
+    $vid = $conn->insert_id;
+
+    $visit_meta[$vid] = [
+        'site_lat'     => (float)$site['latitude'],
+        'site_lon'     => (float)$site['longitude'],
+        'assigned_uid' => $uid,
+        'status'       => $status,
+        'completed_at' => $completed_at,
+    ];
+    $count_v++;
+}
+$vi->close();
+out("  Inserted $count_v visits.");
+
+// ──────────────────────────────────────────────────────────────────────────────
+// STEP 4: maintenance_forms for completed visits
+// ──────────────────────────────────────────────────────────────────────────────
+out('');
+out('STEP 4 — Maintenance forms');
+
+$form_sections  = require 'incl/form_sections.php';
+$onsite_radius  = (int)($conn->query(
+    "SELECT onsite_radius_m FROM payroll_settings WHERE id=1"
+)->fetch_assoc()['onsite_radius_m'] ?? 500);
+
+$statuses_chk   = ['OK', 'N/A', 'Faulty'];
+$photo_captions = ['Overview of site', 'Equipment cabinet',
+                   'Antenna array', 'Generator area', 'Site entrance',
+                   'Cable management'];
+
+// 34 parameters — type string built from str_repeat to avoid counting errors:
+// i(visit_id) + s×4(access/lat/lon/time) + s×4(ant1) + s×4(ant2) + s×4(ant3)
+// + s×2(gps) + s×6(JSON) + s(comments)
+// + i(is_submitted) + s×2(submitted/updated) + s×3(sub_lat/lon/acc)
+// + i(dist_m) + s(loc_status)
+$form_types = 'i'
+    . str_repeat('s', 4)   // access_ref capture_lat capture_lon capture_time
+    . str_repeat('s', 4)   // ant_s1_azimuth etilt mtilt height
+    . str_repeat('s', 4)   // ant_s2
+    . str_repeat('s', 4)   // ant_s3
+    . str_repeat('s', 2)   // gps_lat gps_lon
+    . str_repeat('s', 6)   // 6 JSON cols
+    . 's'                  // general_comments
+    . 'i'                  // is_submitted
+    . str_repeat('s', 2)   // submitted_at updated_at
+    . str_repeat('s', 3)   // submit_lat submit_lon submit_accuracy
+    . 'i'                  // submit_distance_m
+    . 's';                 // submit_location_status
+// Total: 1+4+4+4+4+2+6+1+1+2+3+1+1 = 34 ✓
+
+$fi = $conn->prepare(
+    "INSERT INTO maintenance_forms
+     (visit_id, access_ref, capture_lat, capture_lon, capture_time,
+      ant_s1_azimuth, ant_s1_etilt, ant_s1_mtilt, ant_s1_height,
+      ant_s2_azimuth, ant_s2_etilt, ant_s2_mtilt, ant_s2_height,
+      ant_s3_azimuth, ant_s3_etilt, ant_s3_mtilt, ant_s3_height,
+      gps_lat, gps_lon,
+      equipment_json, generator_json, transmission_json,
+      security_json, container_json, electrical_json,
+      general_comments,
+      is_submitted, submitted_at, updated_at,
+      submit_lat, submit_lon, submit_accuracy,
+      submit_distance_m, submit_location_status)
+     VALUES " . '(' . str_repeat('?,', 33) . '?)'
+);
+
+// 5 params: visit_id(i) filename(s) caption(s) user_id(i) uploaded_at(s)
+$pi = $conn->prepare(
+    "INSERT INTO visit_photos
+     (visit_id, photo_filename, photo_type, caption, uploaded_by_user_id, uploaded_at)
+     VALUES (?, ?, 'other', ?, ?, ?)"
+);
+
+$count_forms   = 0;
+$count_offsite = 0;
+$count_photos  = 0;
+
+foreach ($visit_meta as $vid => $vm) {
+    if ($vm['status'] !== 'completed') continue;
+
+    $slat  = $vm['site_lat'];
+    $slon  = $vm['site_lon'];
+    $subat = $vm['completed_at'];
+
+    // ── Random JSON for each inspection section ──
+    $jsons = [];
+    foreach ($form_sections as $sec_key => $sec) {
+        $d = [];
+        foreach ($sec['fields'] as $fk => $fl) {
+            $st      = $statuses_chk[mt_rand(0, 2)];
+            $d[$fk]  = ['status' => $st, 'remarks' => $st === 'Faulty' ? 'Requires attention' : ''];
+        }
+        $jsons[$sec_key] = json_encode($d);
+    }
+
+    // ── Submit location: 85% on-site, 15% away ──
+    $is_away = (mt_rand(1, 100) <= 15);
+    // on-site points stay well within the configured radius so they classify as on_site
+    $offset_m = $is_away ? mt_rand(2000, 8000) : mt_rand(0, (int) max(5, round($onsite_radius * 0.6)));
+    if ($is_away) $count_offsite++;
+
+    $angle = (mt_rand(0, 359)) * (M_PI / 180.0);
+    $dlat  = ($offset_m / 111000.0) * cos($angle);
+    $dlon  = ($offset_m / (111000.0 * cos(deg2rad($slat)))) * sin($angle);
+    $sublat = round($slat + $dlat, 7);
+    $sublon = round($slon + $dlon, 7);
+    $subacc = mt_rand(5, 40);
+
+    $dist_m    = haversine_m($slat, $slon, $sublat, $sublon) ?? 0;
+    $loc_stat  = classify_onsite($dist_m, $onsite_radius);
+
+    // ── Antenna values ──
+    $az1  = (string)mt_rand(0, 359);
+    $az2  = (string)(((int)$az1 + 120) % 360);
+    $az3  = (string)(((int)$az1 + 240) % 360);
+    $ht   = mt_rand(25, 45) . 'm';
+    $et   = (string)mt_rand(0, 6);
+    $mt_v = (string)mt_rand(0, 4);
+
+    $access_ref   = 'None';
+    $cap_lat      = (string)$slat;
+    $cap_lon      = (string)$slon;
+    $cap_time     = date('H:i', strtotime($subat));
+    $gps_lat      = $cap_lat;
+    $gps_lon      = $cap_lon;
+    $gen_comments = 'Site inspection completed. All findings documented.';
+    $is_sub       = 1;
+    $sublat_s     = (string)$sublat;
+    $sublon_s     = (string)$sublon;
+    $subacc_s     = (string)$subacc;
+
+    $fi->bind_param(
+        $form_types,
+        $vid,
+        $access_ref, $cap_lat, $cap_lon, $cap_time,
+        $az1, $et, $mt_v, $ht,
+        $az2, $et, $mt_v, $ht,
+        $az3, $et, $mt_v, $ht,
+        $gps_lat, $gps_lon,
+        $jsons['equipment'], $jsons['generator'], $jsons['transmission'],
+        $jsons['security'],  $jsons['container'],  $jsons['electrical'],
+        $gen_comments,
+        $is_sub, $subat, $subat,
+        $sublat_s, $sublon_s, $subacc_s,
+        $dist_m, $loc_stat
+    );
+    $fi->execute();
+    $count_forms++;
+
+    // ── 1–3 photos per completed visit ──
+    if (!empty($demo_photos)) {
+        $n_photos = mt_rand(1, 3);
+        for ($p = 0; $p < $n_photos; $p++) {
+            $fn  = $demo_photos[mt_rand(0, count($demo_photos) - 1)];
+            $cap = $photo_captions[mt_rand(0, count($photo_captions) - 1)];
+            $uid = $vm['assigned_uid'];
+            $pi->bind_param('issis', $vid, $fn, $cap, $uid, $subat);
+            $pi->execute();
+            $count_photos++;
+        }
+    }
+}
+$fi->close();
+$pi->close();
+out("  Inserted $count_forms forms ($count_offsite off-site).");
+out("  Inserted $count_photos visit photos.");
+
+// ──────────────────────────────────────────────────────────────────────────────
+// STEP 5: time_entries — ~8 weeks for all employees
+// ──────────────────────────────────────────────────────────────────────────────
+out('');
+out('STEP 5 — Time entries (~8 weeks per employee)');
+
+// Collect weekdays and Sundays in the 8-week window
+$all_weekdays = [];
+$all_sundays  = [];
+for ($ts = $te_start_ts; $ts <= $today_ts; $ts += 86400) {
+    $dow = (int)date('w', $ts);
+    if ($dow >= 1 && $dow <= 5) $all_weekdays[] = $ts;
+    elseif ($dow === 0)          $all_sundays[]  = $ts;
+}
+
+// Helper: random Eswatini-area coordinate
+function rand_sz_coord(): array {
+    return [
+        (string)round(-26.32 + (mt_rand(-300, 300) / 10000.0), 6),
+        (string)round( 31.13 + (mt_rand(-300, 300) / 10000.0), 6),
+    ];
+}
+
+// 9 params: i s s s s s s i s  (user_id, shift, in, out, lat, lon, acc, worked_mins, flag)
+$tei = $conn->prepare(
+    "INSERT INTO time_entries
+     (user_id, shift_type, clock_in_at, clock_out_at,
+      clock_in_lat, clock_in_lon, clock_in_accuracy,
+      worked_minutes, location_flag, status)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'closed')"
+);
+
+$count_te    = 0;
+$auto_budget = 3;
+$auto_done   = 0;
+
+foreach ($employee_ids as $uid) {
+    $shift = $emp_shift[$uid];
+
+    // 88% attendance on weekdays
+    $my_days = array_values(array_filter($all_weekdays, fn() => mt_rand(1, 100) <= 88));
+
+    // ~10% chance of working each Sunday (premium day)
+    $my_sundays = array_values(array_filter($all_sundays, fn() => mt_rand(1, 100) <= 10));
+
+    $all_days = array_merge($my_days, $my_sundays);
+
+    foreach ($all_days as $day_ts) {
+        // Skip seeding for today if it's after 09:00 SAST (keep one open entry realistic)
+        // (Omit this check — seed all days for clean data)
+
+        if ($shift === 'night') {
+            $in_ts  = mktime(20, 0, 0, date('n', $day_ts), date('j', $day_ts), date('Y', $day_ts))
+                      + mt_rand(-15, 15) * 60;
+            // Overtime: 20% chance of 30–90 min extra
+            $ot_extra = (mt_rand(1, 100) <= 20) ? mt_rand(30, 90) * 60 : 0;
+            $out_ts = $in_ts + (9 * 3600) + mt_rand(-20, 45) * 60 + $ot_extra;
+        } else {
+            $in_ts  = mktime(8, 0, 0, date('n', $day_ts), date('j', $day_ts), date('Y', $day_ts))
+                      + mt_rand(-15, 15) * 60;
+            // Overtime: 25% chance of 1–2 h extra
+            $ot_extra = (mt_rand(1, 100) <= 25) ? mt_rand(60, 120) * 60 : 0;
+            $out_ts = $in_ts + (8 * 3600) + mt_rand(-20, 45) * 60 + $ot_extra;
+        }
+
+        $worked_mins = max(1, (int)round(($out_ts - $in_ts) / 60));
+        $clock_in    = date('Y-m-d H:i:s', $in_ts);
+        $clock_out   = date('Y-m-d H:i:s', $out_ts);
+
+        // GPS coords on ~30% of entries
+        $has_gps = (mt_rand(1, 100) <= 30);
+        $in_lat = $in_lon = $in_acc = '';
+        if ($has_gps) {
+            [$in_lat, $in_lon] = rand_sz_coord();
+            $in_acc = (string)mt_rand(8, 50);
+        }
+
+        // location_flag — always prefixed 'demo'
+        $flag_parts = ['demo'];
+        if ($has_gps)  $flag_parts[] = 'gps';
+        if ($auto_done < $auto_budget && mt_rand(1, 200) === 1) {
+            $flag_parts[] = 'auto_clocked_out';
+            $auto_done++;
+        }
+        $flag = implode(' ', $flag_parts);
+
+        $tei->bind_param(
+            'issssssis',
+            $uid, $shift, $clock_in, $clock_out,
+            $in_lat, $in_lon, $in_acc,
+            $worked_mins, $flag
+        );
+        $tei->execute();
+        $count_te++;
+    }
+}
+$tei->close();
+out("  Inserted $count_te time entries ($auto_done flagged auto_clocked_out).");
+
+// ──────────────────────────────────────────────────────────────────────────────
+// STEP 6: Vehicles + inspection checklists (~6 weeks)
+// ──────────────────────────────────────────────────────────────────────────────
+out('');
+out('STEP 6 — Vehicles & inspections');
+
+$checklist = require 'incl/vehicle_checklist.php';
+
+// Fleet numbers FL-01.. are the demo marker (clear removes fleet_number LIKE 'FL-%')
+$veh_defs = [
+    ['Toyota Hilux 2.4',      'SD 421 MG'],
+    ['Isuzu D-Max 250',       'SD 118 KH'],
+    ['Ford Ranger XL',        'SD 903 BM'],
+    ['Nissan NP300 Hardbody', 'SD 337 TS'],
+    ['Toyota Land Cruiser',   'SD 552 LC'],
+    ['Toyota Hilux 2.8 GD',   'SD 274 HX'],
+    ['Isuzu KB250',           'SD 689 KB'],
+    ['VW Amarok 2.0',         'SD 145 AM'],
+    ['Ford Ranger 3.2',       'SD 812 FR'],
+    ['Nissan Navara',         'SD 506 NV'],
+    ['Mahindra Bolero',       'SD 233 MB'],
+    ['Toyota Hilux D4D',      'SD 977 DX'],
+];
+
+$veh_ins = $conn->prepare("INSERT INTO vehicles (make, fleet_number, registration, status) VALUES (?, ?, ?, 'active')");
+$veh_ids = [];
+$veh_odo = [];
+foreach ($veh_defs as $i => $vd) {
+    $fleet = sprintf('FL-%02d', $i + 1);
+    $veh_ins->bind_param('sss', $vd[0], $fleet, $vd[1]);
+    $veh_ins->execute();
+    $vid = (int)$conn->insert_id;
+    $veh_ids[]       = $vid;
+    $veh_odo[$vid]   = mt_rand(35000, 145000);
+}
+$veh_ins->close();
+$count_veh = count($veh_ids);
+out("  Vehicles inserted: $count_veh");
+
+// Inspection window: 6 weeks of weekdays
+$insp_start_ts = $today_ts - (6 * 7 * 86400);
+$status_pool   = ['ok','ok','ok','ok','ok','ok','ok','attention','attention','critical']; // mostly ok
+$attn_remarks  = ['Needs topping up', 'Slightly worn', 'Booked for service', 'Monitor next inspection'];
+$crit_remarks  = ['Replace urgently', 'Not working', 'Failed check — report to workshop'];
+
+$ii = $conn->prepare(
+    "INSERT INTO vehicle_inspections
+     (vehicle_id, driver_user_id, inspection_date, odometer_km, overall_status, repair_request, items_json)
+     VALUES (?, ?, ?, ?, ?, ?, ?)"
+);
+
+$count_insp = 0;
+foreach ($veh_ids as $vid) {
+    $driver = $employee_ids[array_rand($employee_ids)];
+    for ($ts = $insp_start_ts; $ts <= $today_ts; $ts += 86400) {
+        $dow = (int)date('w', $ts);
+        if ($dow === 0 || $dow === 6) continue;   // weekdays only
+        if (mt_rand(1, 100) > 45)     continue;   // ~45% of weekdays inspected
+        if (mt_rand(1, 100) <= 30) $driver = $employee_ids[array_rand($employee_ids)];
+
+        // Decide the inspection outcome first, then mark items to match — most
+        // daily checks pass clean (~70% OK, ~22% attention, ~8% critical).
+        $roll   = mt_rand(1, 100);
+        $target = $roll <= 70 ? 'ok' : ($roll <= 92 ? 'attention' : 'critical');
+
+        // Flatten field keys, start everything OK
+        $all_fields = [];
+        $items = [];
+        foreach ($checklist as $sec_key => $sec) {
+            if (!is_array($sec) || empty($sec['fields'])) continue;
+            $items[$sec_key] = [];
+            foreach ($sec['fields'] as $fk => $fl) {
+                $items[$sec_key][$fk] = ['status' => 'ok', 'remarks' => ''];
+                $all_fields[] = [$sec_key, $fk];
+            }
+        }
+
+        $has_attn = false; $has_crit = false;
+        if ($target === 'attention') {
+            $k = mt_rand(1, 2);
+            for ($x = 0; $x < $k; $x++) {
+                [$sk, $fk] = $all_fields[array_rand($all_fields)];
+                $items[$sk][$fk] = ['status' => 'attention', 'remarks' => $attn_remarks[array_rand($attn_remarks)]];
+                $has_attn = true;
+            }
+        } elseif ($target === 'critical') {
+            [$sk, $fk] = $all_fields[array_rand($all_fields)];
+            $items[$sk][$fk] = ['status' => 'critical', 'remarks' => $crit_remarks[array_rand($crit_remarks)]];
+            $has_crit = true;
+            if (mt_rand(1, 100) <= 40) { // sometimes an extra attention item alongside
+                [$sk2, $fk2] = $all_fields[array_rand($all_fields)];
+                if ($items[$sk2][$fk2]['status'] === 'ok') {
+                    $items[$sk2][$fk2] = ['status' => 'attention', 'remarks' => $attn_remarks[array_rand($attn_remarks)]];
+                    $has_attn = true;
+                }
+            }
+        }
+        $overall = $has_crit ? 'critical' : ($has_attn ? 'attention' : 'ok');
+        $repair     = $has_crit ? 'Critical items flagged — see checklist.'
+                    : ($has_attn ? 'Minor items need attention.' : '');
+        $odo        = ($veh_odo[$vid] += mt_rand(20, 180));
+        $date       = date('Y-m-d', $ts);
+        $items_json = json_encode($items);
+
+        $ii->bind_param('iisisss', $vid, $driver, $date, $odo, $overall, $repair, $items_json);
+        $ii->execute();
+        $count_insp++;
+    }
+}
+$ii->close();
+out("  Vehicle inspections inserted: $count_insp");
+
+// ── Summary ───────────────────────────────────────────────────────────────────
+out('');
+out('=== SEED COMPLETE ===');
+out('  Employees updated (shift types):     ' . count($employee_ids));
+out('  Demo photo stubs in uploads/:        ' . count($demo_photos));
+out('  Visits inserted:                     ' . $count_v);
+out('  Maintenance forms:                   ' . $count_forms . '  (off-site: ' . $count_offsite . ')');
+out('  Visit photos:                        ' . $count_photos);
+out('  Time entries:                        ' . $count_te);
+out('  Vehicles:                            ' . $count_veh);
+out('  Vehicle inspections:                 ' . $count_insp);
+out('');
+out('To clear demo data:  php database/seed_demo.php clear');
+
+if (!$cli) echo "<br><a href='../admin_dashboard.php' class='btn btn-primary'>Back to Dashboard</a></div></body></html>\n";

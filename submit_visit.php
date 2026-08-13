@@ -1,5 +1,6 @@
 <?php
 require_once 'incl/dbconn.php';
+require_once 'incl/geo.php';
 require_employee();
 csrf_check();
 
@@ -30,7 +31,7 @@ if (!$visit || $visit['status'] == 'completed') {
 }
 
 // ── Maintenance type declared by the technician ───────────────────────────────
-$maintenance_type = in_array($_POST['maintenance_type'] ?? '', ['active', 'passive'])
+$maintenance_type = in_array($_POST['maintenance_type'] ?? '', ['active', 'passive', 'housekeeping'])
     ? $_POST['maintenance_type']
     : 'active';
 
@@ -59,6 +60,38 @@ foreach (['s1', 's2', 's3'] as $s) {
 $gps_lat = substr(trim($_POST['gps_lat'] ?? ''), 0, 30);
 $gps_lon = substr(trim($_POST['gps_lon'] ?? ''), 0, 30);
 $general_comments = substr(trim($_POST['general_comments'] ?? ''), 0, 5000);
+
+// ── Silently captured device location (hidden inputs, admin-only visibility) ──
+// Separate from the manual GPS fields above. Never blocks the submit: if the
+// browser gave nothing we store NULLs and keep any previously captured point.
+$submit_lat = substr(trim($_POST['submit_lat'] ?? ''), 0, 30);
+$submit_lon = substr(trim($_POST['submit_lon'] ?? ''), 0, 30);
+$submit_acc = substr(trim($_POST['submit_accuracy'] ?? ''), 0, 20);
+if ($submit_lat === '' || $submit_lon === '') {
+    $submit_lat = null; $submit_lon = null; $submit_acc = null; $submit_captured_at = null;
+} else {
+    $submit_captured_at = $now_dt;
+}
+
+// ── On-site distance check (Change 2 — anti-fraud location audit) ─────────────
+// Compute how far the technician's device was from the tower when they submitted.
+// onsite_radius_m comes from payroll_settings so the office can tune it.
+$ps_row = $conn->query("SELECT onsite_radius_m, min_photos FROM payroll_settings WHERE id = 1")->fetch_assoc();
+$onsite_radius_m = (int) ($ps_row['onsite_radius_m'] ?? 500);
+$min_photos_req  = (int) ($ps_row['min_photos']      ?? 1);
+
+$site_lat = $visit['latitude']  !== null && $visit['latitude']  !== '' ? (string)$visit['latitude']  : null;
+$site_lon = $visit['longitude'] !== null && $visit['longitude'] !== '' ? (string)$visit['longitude'] : null;
+
+if ($submit_lat !== null && $submit_lon !== null && $site_lat !== null && $site_lon !== null) {
+    $submit_distance_m      = haversine_m($submit_lat, $submit_lon, $site_lat, $site_lon);
+    $submit_location_status = classify_onsite($submit_distance_m, $onsite_radius_m);
+} else {
+    // No GPS from device or site has no coords — store NULLs so COALESCE
+    // in the ON DUPLICATE KEY UPDATE clause preserves any previously captured value.
+    $submit_distance_m      = null;
+    $submit_location_status = null;
+}
 
 // ── Build JSON for each inspection section ─────────────────────────────────────
 $valid_statuses = ['OK', 'Faulty', 'N/A'];
@@ -94,6 +127,27 @@ for ($p = 1; $p <= 4; $p++) {
     }
 }
 
+// ── Minimum photos enforcement (Change 3) — final submit only ─────────────────
+// Count photos already saved for this visit plus any just uploaded this request.
+// If the total is below the threshold we save as a draft instead of finalising.
+if ($is_final) {
+    $new_photo_count = count(array_filter($photo_filenames, fn ($f) => $f !== ''));
+    $ep_stmt = $conn->prepare("SELECT COUNT(*) AS n FROM visit_photos WHERE visit_id = ? AND photo_type = 'other'");
+    $ep_stmt->bind_param('i', $visit_id);
+    $ep_stmt->execute();
+    $existing_photo_count = (int) $ep_stmt->get_result()->fetch_assoc()['n'];
+    $ep_stmt->close();
+    $total_photos = $existing_photo_count + $new_photo_count;
+
+    if ($total_photos < $min_photos_req) {
+        // Downgrade to draft — photo requirement not met
+        $is_final     = false;
+        $is_submitted = 0;
+        $submitted_at = null;
+        flash("Please attach at least {$min_photos_req} photo(s) of the site before submitting.");
+    }
+}
+
 // ── Upsert maintenance_forms ───────────────────────────────────────────────────
 $stmt = $conn->prepare("
     INSERT INTO maintenance_forms
@@ -104,8 +158,10 @@ $stmt = $conn->prepare("
          gps_lat, gps_lon,
          equipment_json, generator_json, transmission_json,
          security_json, container_json, electrical_json,
-         general_comments, is_submitted, submitted_at, updated_at)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+         general_comments, is_submitted, submitted_at, updated_at,
+         submit_lat, submit_lon, submit_accuracy, submit_captured_at,
+         submit_distance_m, submit_location_status)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     ON DUPLICATE KEY UPDATE
         access_ref=VALUES(access_ref), capture_lat=VALUES(capture_lat),
         capture_lon=VALUES(capture_lon), capture_time=VALUES(capture_time),
@@ -120,7 +176,13 @@ $stmt = $conn->prepare("
         transmission_json=VALUES(transmission_json), security_json=VALUES(security_json),
         container_json=VALUES(container_json), electrical_json=VALUES(electrical_json),
         general_comments=VALUES(general_comments),
-        is_submitted=VALUES(is_submitted), submitted_at=VALUES(submitted_at), updated_at=VALUES(updated_at)
+        is_submitted=VALUES(is_submitted), submitted_at=VALUES(submitted_at), updated_at=VALUES(updated_at),
+        submit_lat=COALESCE(VALUES(submit_lat), submit_lat),
+        submit_lon=COALESCE(VALUES(submit_lon), submit_lon),
+        submit_accuracy=COALESCE(VALUES(submit_accuracy), submit_accuracy),
+        submit_captured_at=COALESCE(VALUES(submit_captured_at), submit_captured_at),
+        submit_distance_m=COALESCE(VALUES(submit_distance_m), submit_distance_m),
+        submit_location_status=COALESCE(VALUES(submit_location_status), submit_location_status)
 ");
 // json_encode() results must be stored in variables — bind_param takes them by reference
 $equipment_json    = json_encode($json['equipment']);
@@ -130,7 +192,9 @@ $security_json     = json_encode($json['security']);
 $container_json    = json_encode($json['container']);
 $electrical_json   = json_encode($json['electrical']);
 
-$types = 'i' . str_repeat('s', 25) . 'iss';   // visit_id + 25 strings + is_submitted, submitted_at, updated_at
+// visit_id(i) + 25 strings(s) + is_submitted(i) + submitted_at/updated_at(ss)
+// + submit_lat/lon/acc/captured_at(ssss) + submit_distance_m(i) + submit_location_status(s)
+$types = 'i' . str_repeat('s', 25) . 'iss' . 'ssss' . 'is';
 $stmt->bind_param($types,
     $visit_id,
     $access_ref, $capture_lat, $capture_lon, $capture_time,
@@ -140,7 +204,9 @@ $stmt->bind_param($types,
     $gps_lat, $gps_lon,
     $equipment_json, $generator_json, $transmission_json,
     $security_json, $container_json, $electrical_json,
-    $general_comments, $is_submitted, $submitted_at, $updated_at
+    $general_comments, $is_submitted, $submitted_at, $updated_at,
+    $submit_lat, $submit_lon, $submit_acc, $submit_captured_at,
+    $submit_distance_m, $submit_location_status
 );
 $stmt->execute();
 $stmt->close();

@@ -21,8 +21,11 @@ $types  = str_repeat('s', count($params));
 $total_sites = client_site_count($conn, $client['match_keyword']);
 
 $stmt = $conn->prepare("
-    SELECT SUM(v.status = 'in_progress') AS in_progress,
-           SUM(v.status = 'completed')   AS completed
+    SELECT SUM(v.status = 'in_progress')                                          AS in_progress,
+           SUM(v.status = 'completed')                                            AS completed,
+           SUM(v.status = 'completed'
+               AND YEAR(v.completed_at)=YEAR(CURDATE())
+               AND MONTH(v.completed_at)=MONTH(CURDATE()))                        AS completed_month
     FROM visits v JOIN sites s ON s.site_id = v.site_id
     WHERE $cond
 ");
@@ -31,14 +34,14 @@ $stmt->execute();
 $vs = $stmt->get_result()->fetch_assoc();
 $stmt->close();
 
-// ── Recent activity (the "what's happening" feed) ──────────────────────────────
+// ── Recent activity (the "what's happening" feed) — show last 10 ──────────────
 $stmt = $conn->prepare("
     SELECT v.visit_id, v.visit_type, v.status, v.scheduled_date,
            s.site_id, s.site_name
     FROM visits v JOIN sites s ON s.site_id = v.site_id
     WHERE $cond
     ORDER BY v.created_at DESC
-    LIMIT 6
+    LIMIT 10
 ");
 $stmt->bind_param($types, ...$params);
 $stmt->execute();
@@ -78,7 +81,7 @@ include 'incl/header.php';
             <h1><?php echo htmlspecialchars($client['name']); ?></h1>
         </div>
         <p class='page-intro'>
-            Welcome. This is your read-only portal — see your sites and the maintenance M26 has carried out.
+            Welcome to your M26 portal &mdash; track site visits, view inspection reports, and stay up to date with maintenance across your sites.
         </p>
 
         <div class='stat-row'>
@@ -86,28 +89,33 @@ include 'incl/header.php';
                 <div class='stat-label'>Your Sites</div>
                 <div class='stat-value'><?php echo $total_sites; ?></div>
             </div>
-            <div class='stat-box'>
+            <div class='stat-box<?php echo (int)($vs['in_progress'] ?? 0) > 0 ? ' stat-box--green' : ''; ?>'>
                 <div class='stat-label'>In Progress</div>
                 <div class='stat-value'><?php echo (int)($vs['in_progress'] ?? 0); ?></div>
             </div>
             <div class='stat-box'>
-                <div class='stat-label'>Completed</div>
+                <div class='stat-label'>Completed This Month</div>
+                <div class='stat-value'><?php echo (int)($vs['completed_month'] ?? 0); ?></div>
+            </div>
+            <div class='stat-box'>
+                <div class='stat-label'>All Completed</div>
                 <div class='stat-value'><?php echo (int)($vs['completed'] ?? 0); ?></div>
             </div>
         </div>
 
         <div class='section-heading'>Recent Activity</div>
         <?php if ($recent->num_rows == 0): ?>
-            <p style='color:#888;'>No visit activity on your sites yet.</p>
+            <p style='color:#888; font-size:13px;'>No visit activity on your sites yet &mdash; M26 will update this when work begins.</p>
         <?php else: ?>
             <div class='card card-table'><table class='data-table'>
-                <tr><th>Site</th><th>Scheduled</th><th>Status</th><th></th></tr>
+                <tr><th>Site</th><th>Visit Type</th><th>Scheduled</th><th>Status</th><th></th></tr>
                 <?php while ($r = $recent->fetch_assoc()): ?>
                 <tr>
                     <td><?php echo htmlspecialchars($r['site_name']); ?></td>
+                    <td><?php echo htmlspecialchars($r['visit_type']); ?></td>
                     <td><?php echo fmt_date($r['scheduled_date']); ?></td>
                     <td><?php echo status_badge($r['status']); ?></td>
-                    <td><a href='client_site_detail.php?site_id=<?php echo $r['site_id']; ?>'>Open &rarr;</a></td>
+                    <td><a href='client_site_detail.php?site_id=<?php echo (int)$r['site_id']; ?>'>View &rarr;</a></td>
                 </tr>
                 <?php endwhile; ?>
             </table></div>

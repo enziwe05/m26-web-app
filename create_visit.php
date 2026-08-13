@@ -4,7 +4,6 @@ require_staff();
 
 $message = "";
 
-$sites     = $conn->query("SELECT site_id, site_code, site_name FROM sites ORDER BY site_code");
 $employees = $conn->query("SELECT user_id, first_name, last_name FROM users WHERE role = 'employee' AND status = 'active' ORDER BY first_name");
 
 // Pre-select site if coming from site_detail.php
@@ -74,15 +73,7 @@ include 'incl/header.php';
 
             <div class='form-group'>
                 <label>Site *</label>
-                <select name='site_id'>
-                    <option value=''>-- Select Site --</option>
-                    <?php
-                    while ($s = $sites->fetch_assoc()) {
-                        $sel = ($s['site_id'] == $preselect_site) ? "selected" : "";
-                        echo "<option value='" . $s['site_id'] . "' $sel>" . htmlspecialchars($s['site_name']) . "</option>";
-                    }
-                    ?>
-                </select>
+                <?php echo site_picker_field($conn, $preselect_site); ?>
             </div>
 
             <div class='form-group'>

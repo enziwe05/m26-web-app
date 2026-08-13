@@ -97,7 +97,7 @@ include 'incl/header.php';
         } else {
             $showing_from = $offset + 1;
             $showing_to   = $offset + $result->num_rows;
-            echo "<p style='font-size:13px; color:#888; margin-bottom:10px;'>Showing $showing_from–$showing_to of $total sites</p>";
+            echo "<p style='font-size:13px; color:#888; margin-bottom:10px;'>Showing {$showing_from}&ndash;{$showing_to} of {$total} sites</p>";
             echo "<div class='table-scroll'>";
             echo "<table class='data-table'>";
             echo "<tr><th>Code</th><th>Name</th><th>Region</th><th>Location</th><th>Total Visits</th><th></th></tr>";

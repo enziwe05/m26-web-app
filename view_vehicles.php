@@ -22,6 +22,19 @@ $result = $conn->query($sql);
 
 $today = date('Y-m-d');
 
+// Pull rows once so we can show an at-a-glance summary before the table.
+$vehicles = [];
+if ($result) while ($r = $result->fetch_assoc()) $vehicles[] = $r;
+
+$c_active = $c_checked = $c_flagged = $c_notchecked = 0;
+foreach ($vehicles as $r) {
+    $active = $r['status'] !== 'inactive';
+    if (!$active) continue;
+    $c_active++;
+    if ($r['last_status'] === 'critical' || $r['last_status'] === 'attention') $c_flagged++;
+    if ($r['last_date'] === $today) $c_checked++; else $c_notchecked++;
+}
+
 $page_title = 'M26 | Vehicles';
 include 'incl/header.php';
 ?>
@@ -39,22 +52,43 @@ include 'incl/header.php';
             <a href='vehicle_inspections.php'>Go to the Daily Inspection Log &rarr;</a>
         </p>
 
-        <?php
-        if (!$result || $result->num_rows == 0) {
-            echo empty_state(
+        <?php if (!$vehicles): ?>
+            <?php echo empty_state(
                 'No vehicles yet',
                 'Add your company vehicles here, then drivers can run their daily checks.',
                 is_admin() ? 'add_vehicle.php' : '',
                 is_admin() ? '+ Add Vehicle' : ''
-            );
-        } else {
+            ); ?>
+        <?php else: ?>
+
+        <!-- At-a-glance fleet summary -->
+        <div class='stat-row'>
+            <div class='stat-box'>
+                <div class='stat-label'>Fleet Size</div>
+                <div class='stat-value'><?php echo $c_active; ?></div>
+            </div>
+            <a class='stat-box<?php echo $c_notchecked === 0 ? ' stat-box--green' : ''; ?>' href='vehicle_inspections.php'>
+                <div class='stat-label'>Checked Today</div>
+                <div class='stat-value'><?php echo $c_checked; ?> / <?php echo $c_active; ?></div>
+            </a>
+            <a class='stat-box<?php echo $c_flagged > 0 ? ' stat-box--amber' : ''; ?>' href='vehicle_inspections.php?status=attention'>
+                <div class='stat-label'>&#9888; Needs Attention</div>
+                <div class='stat-value'><?php echo $c_flagged; ?></div>
+            </a>
+            <a class='stat-box<?php echo $c_notchecked > 0 ? ' stat-box--red' : ''; ?>' href='vehicle_inspections.php'>
+                <div class='stat-label'>Not Checked Today</div>
+                <div class='stat-value'><?php echo $c_notchecked; ?></div>
+            </a>
+        </div>
+
+        <?php
             echo "<div class='table-scroll'><table class='data-table'>";
-            echo "<tr><th>Registration</th><th>Make</th><th>Fleet #</th><th>Last Check</th><th>Status</th><th></th></tr>";
-            while ($row = $result->fetch_assoc()) {
+            echo "<tr><th>Vehicle</th><th>Last Check</th><th>Condition</th><th></th></tr>";
+            foreach ($vehicles as $row) {
                 // "Checked today?" indicator
                 $last = $row['last_date'];
                 if ($last === $today) {
-                    $check = "<span style='color:#1a6b1a;'>&#10003; Today</span>";
+                    $check = "<span style='color:#1a6b1a; font-weight:600;'>&#10003; Today</span>";
                 } elseif ($last) {
                     $check = "<span style='color:#b35900;'>" . fmt_date($last) . "</span>";
                 } else {
@@ -68,19 +102,21 @@ include 'incl/header.php';
                 elseif ($os === 'ok')        { $sb = "<span class='badge badge-completed'>OK</span>"; }
                 else                         { $sb = "<span style='color:#bbb;'>&mdash;</span>"; }
 
+                // Vehicle: registration over a muted make · fleet sub-line
+                $sub = trim(($row['make'] ?? '') . ($row['fleet_number'] ? ' · ' . $row['fleet_number'] : ''));
+                if ($row['status'] === 'inactive') $sub = ($sub !== '' ? $sub . ' · ' : '') . 'inactive';
+
                 $dim = $row['status'] === 'inactive' ? " style='opacity:.55;'" : '';
                 echo "<tr$dim>";
-                echo "<td><strong>" . htmlspecialchars($row['registration']) . "</strong>" .
-                     ($row['status'] === 'inactive' ? " <span style='font-size:11px;color:#888;'>(inactive)</span>" : "") . "</td>";
-                echo "<td>" . htmlspecialchars($row['make'] ?? '—') . "</td>";
-                echo "<td>" . htmlspecialchars($row['fleet_number'] ?? '—') . "</td>";
+                echo "<td><div class='cell-name'>" . htmlspecialchars($row['registration']) . "</div>"
+                   . "<div class='cell-sub'>" . htmlspecialchars($sub !== '' ? $sub : '—') . "</div></td>";
                 echo "<td>" . $check . "</td>";
                 echo "<td>" . $sb . "</td>";
-                echo "<td><a href='vehicle_detail.php?vehicle_id=" . $row['vehicle_id'] . "'>Weekly checklist &rarr;</a></td>";
+                echo "<td><a href='vehicle_detail.php?vehicle_id=" . (int)$row['vehicle_id'] . "'>Weekly checklist &rarr;</a></td>";
                 echo "</tr>";
             }
             echo "</table></div>";
-        }
         ?>
+        <?php endif; ?>
 
 <?php include 'incl/footer.php'; ?>
