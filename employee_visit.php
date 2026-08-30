@@ -47,6 +47,38 @@ $stmt->execute();
 $site_photos = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
 $stmt->close();
 
+// Antenna reference data for THIS site (imported from the LTE export). Used to
+// pre-fill the per-sector inputs so the tech starts from the site's known values
+// and only edits what differs. One value per sector (its first recorded cell).
+$ant_ref = [];   // sector number (1-3) => [azimuth, mtilt, etilt, height]
+$stmt = $conn->prepare("
+    SELECT sector, azimuth, mech_tilt, e_tilt, antenna_height
+    FROM site_cells WHERE site_id = ?
+    ORDER BY CAST(sector AS UNSIGNED), frequency_band
+");
+$stmt->bind_param('i', $visit['site_id']);
+$stmt->execute();
+$rc = $stmt->get_result();
+while ($cl = $rc->fetch_assoc()) {
+    $secnum = (int) preg_replace('/\D/', '', (string) $cl['sector']);
+    if ($secnum >= 1 && $secnum <= 3 && !isset($ant_ref[$secnum])) {
+        $ant_ref[$secnum] = [
+            'azimuth' => (string) $cl['azimuth'],
+            'mtilt'   => (string) $cl['mech_tilt'],
+            'etilt'   => (string) $cl['e_tilt'],
+            'height'  => (string) $cl['antenna_height'],
+        ];
+    }
+}
+$stmt->close();
+
+// Pick the saved reading if the tech has one, otherwise fall back to the site record.
+function ant_default(?array $existing_form, array $ant_ref, int $s, string $field, string $ref_key): string {
+    $saved = (string) ($existing_form['ant_s' . $s . '_' . $field] ?? '');
+    if ($saved !== '') return $saved;
+    return $ant_ref[$s][$ref_key] ?? '';
+}
+
 $is_completed = ($visit['status'] == 'completed');
 
 // Section definitions — each key maps to a human label
@@ -234,7 +266,7 @@ include 'incl/header.php';
                     <tr><th style='width:220px;'>Item</th><th>Value</th></tr>
                     <tr>
                         <td>Access Reference</td>
-                        <td><input type='text' name='access_ref' placeholder='e.g. None / Noted'
+                        <td><input type='text' name='access_ref' placeholder='None / Noted'
                                    value='<?php echo htmlspecialchars($existing_form['access_ref'] ?? ''); ?>'></td>
                     </tr>
                     <tr>
@@ -329,28 +361,33 @@ include 'incl/header.php';
             <!-- ── Antenna Information ── -->
             <div class='mf-section card'>
                 <h2>Antenna Information</h2>
+                <?php if (!empty($ant_ref)): ?>
+                <p style='font-size:12px; color:#666; margin:-4px 0 10px;'>
+                    Pre-filled from the site's records &mdash; edit any value that differs from what you find on site.
+                </p>
+                <?php endif; ?>
                 <?php for ($s = 1; $s <= 3; $s++): ?>
                 <p style='font-weight:600; margin:12px 0 6px;'>Sector <?php echo $s; ?></p>
                 <div class='antenna-grid'>
                     <div>
                         <label>Azimuth</label>
-                        <input type='text' name='ant_s<?php echo $s; ?>_azimuth' placeholder='e.g. 120°'
-                               value='<?php echo htmlspecialchars($existing_form['ant_s'.$s.'_azimuth'] ?? ''); ?>'>
+                        <input type='text' name='ant_s<?php echo $s; ?>_azimuth' placeholder='120°'
+                               value='<?php echo htmlspecialchars(ant_default($existing_form, $ant_ref, $s, 'azimuth', 'azimuth')); ?>'>
                     </div>
                     <div>
                         <label>E-Tilt</label>
-                        <input type='text' name='ant_s<?php echo $s; ?>_etilt' placeholder='e.g. 4'
-                               value='<?php echo htmlspecialchars($existing_form['ant_s'.$s.'_etilt'] ?? ''); ?>'>
+                        <input type='text' name='ant_s<?php echo $s; ?>_etilt' placeholder='4'
+                               value='<?php echo htmlspecialchars(ant_default($existing_form, $ant_ref, $s, 'etilt', 'etilt')); ?>'>
                     </div>
                     <div>
                         <label>M-Tilt</label>
-                        <input type='text' name='ant_s<?php echo $s; ?>_mtilt' placeholder='e.g. 2'
-                               value='<?php echo htmlspecialchars($existing_form['ant_s'.$s.'_mtilt'] ?? ''); ?>'>
+                        <input type='text' name='ant_s<?php echo $s; ?>_mtilt' placeholder='2'
+                               value='<?php echo htmlspecialchars(ant_default($existing_form, $ant_ref, $s, 'mtilt', 'mtilt')); ?>'>
                     </div>
                     <div>
                         <label>Antenna Height</label>
-                        <input type='text' name='ant_s<?php echo $s; ?>_height' placeholder='e.g. 30m'
-                               value='<?php echo htmlspecialchars($existing_form['ant_s'.$s.'_height'] ?? ''); ?>'>
+                        <input type='text' name='ant_s<?php echo $s; ?>_height' placeholder='30m'
+                               value='<?php echo htmlspecialchars(ant_default($existing_form, $ant_ref, $s, 'height', 'height')); ?>'>
                     </div>
                 </div>
                 <?php endfor; ?>
@@ -358,12 +395,12 @@ include 'incl/header.php';
                 <div class='antenna-grid' style='grid-template-columns: 1fr 1fr 3fr;'>
                     <div>
                         <label>GPS Latitude</label>
-                        <input type='text' name='gps_lat' placeholder='e.g. -26.3259'
+                        <input type='text' name='gps_lat' placeholder='-26.3259'
                                value='<?php echo htmlspecialchars($existing_form['gps_lat'] ?? ''); ?>'>
                     </div>
                     <div>
                         <label>GPS Longitude</label>
-                        <input type='text' name='gps_lon' placeholder='e.g. 31.1436'
+                        <input type='text' name='gps_lon' placeholder='31.1436'
                                value='<?php echo htmlspecialchars($existing_form['gps_lon'] ?? ''); ?>'>
                     </div>
                 </div>
@@ -462,9 +499,152 @@ include 'incl/header.php';
                     form.appendChild(hid);
                 }
                 if (confirm('This will finalise and lock the form. Continue?')) {
-                    form.submit();
+                    // Wait for any photo still being optimised, then submit.
+                    var go = function () { if (window.mfClearDraft) window.mfClearDraft(); form.submit(); };
+                    if (window.mfWhenReady) window.mfWhenReady(go); else go();
                 }
             });
+        })();
+        </script>
+
+        <script>
+        /* ================================================================
+         * Maintenance-form reliability upgrades (client-side only):
+         *   1. Shrink photos in the browser before upload   → fast on mobile data
+         *   2. Auto-save typed fields locally               → no lost progress if the page expires
+         *   3. Keep the login session alive while open      → fewer mid-task logouts
+         * ================================================================ */
+        (function () {
+            var form = document.querySelector("form[action='submit_visit.php']");
+            if (!form) return;
+
+            function kb(b){ return b < 1048576 ? Math.round(b / 1024) + ' KB' : (b / 1048576).toFixed(1) + ' MB'; }
+
+            /* ---------- 1. Photo compression ---------- */
+            var MAX_DIM    = 1600;          // longest edge in px
+            var QUALITY    = 0.7;           // JPEG quality
+            var SKIP_UNDER = 400 * 1024;    // already-small files aren't re-encoded
+            var pending = 0, readyCbs = [];
+            function whenReady(cb){ if (pending === 0) cb(); else readyCbs.push(cb); }
+            function compressDone(){ if (--pending <= 0){ pending = 0; var c = readyCbs.slice(); readyCbs.length = 0; c.forEach(function (f){ f(); }); } }
+
+            function canCompress(){
+                if (!window.FileReader || !window.HTMLCanvasElement) return false;
+                try { new DataTransfer(); return true; } catch (e){ return false; }
+            }
+
+            function compressInput(input){
+                if (!input.files || !input.files.length) return;
+                var file = input.files[0];
+                var note = input.parentNode.querySelector('.photo-note');
+                if (!/^image\//.test(file.type)) { if (note) note.textContent = ''; return; }
+                if (file.size <= SKIP_UNDER){ if (note) note.textContent = 'Ready (' + kb(file.size) + ')'; return; }
+
+                pending++;
+                if (note) note.textContent = 'Optimising photo…';
+                var img = new Image();
+                var url = URL.createObjectURL(file);
+                img.onload = function (){
+                    URL.revokeObjectURL(url);
+                    var w = img.naturalWidth, h = img.naturalHeight;
+                    var scale = Math.min(1, MAX_DIM / Math.max(w, h));
+                    var cw = Math.max(1, Math.round(w * scale)), ch = Math.max(1, Math.round(h * scale));
+                    var canvas = document.createElement('canvas');
+                    canvas.width = cw; canvas.height = ch;
+                    canvas.getContext('2d').drawImage(img, 0, 0, cw, ch);
+                    canvas.toBlob(function (blob){
+                        if (blob && blob.size < file.size){
+                            var name = file.name.replace(/\.[^.]+$/, '') + '.jpg';
+                            var dt = new DataTransfer();
+                            dt.items.add(new File([blob], name, { type: 'image/jpeg', lastModified: Date.now() }));
+                            input.files = dt.files;
+                            if (note) note.textContent = 'Ready (' + kb(file.size) + ' → ' + kb(blob.size) + ')';
+                        } else if (note) {
+                            note.textContent = 'Ready (' + kb(file.size) + ')';
+                        }
+                        compressDone();
+                    }, 'image/jpeg', QUALITY);
+                };
+                img.onerror = function (){ URL.revokeObjectURL(url); if (note) note.textContent = 'Ready (' + kb(file.size) + ')'; compressDone(); };
+                img.src = url;
+            }
+
+            if (canCompress()){
+                var fileInputs = form.querySelectorAll("input[type='file'][name^='photo_']");
+                Array.prototype.forEach.call(fileInputs, function (inp){
+                    var n = document.createElement('div');
+                    n.className = 'photo-note';
+                    n.style.cssText = 'font-size:11px;color:#666;margin-top:4px;min-height:14px;';
+                    inp.parentNode.insertBefore(n, inp.nextSibling);
+                    inp.addEventListener('change', function (){ compressInput(inp); });
+                });
+            }
+
+            /* ---------- 2. Auto-save typed fields locally ---------- */
+            var KEY = 'm26_mf_' + <?php echo (int)$visit_id; ?>;
+            function savableFields(){ return form.querySelectorAll("input[type='text'], input[type='radio'], select, textarea"); }
+            function saveLocal(){
+                try {
+                    var data = {};
+                    Array.prototype.forEach.call(savableFields(), function (el){
+                        if (!el.name) return;
+                        if (el.type === 'radio'){ if (el.checked) data[el.name] = el.value; }
+                        else { data[el.name] = el.value; }
+                    });
+                    localStorage.setItem(KEY, JSON.stringify({ t: Date.now(), d: data }));
+                } catch (e) { /* storage disabled/full — ignore */ }
+            }
+            function restoreLocal(){
+                var raw; try { raw = localStorage.getItem(KEY); } catch (e){ return; }
+                if (!raw) return;
+                var obj; try { obj = JSON.parse(raw); } catch (e){ return; }
+                if (!obj || !obj.d) return;
+                Array.prototype.forEach.call(savableFields(), function (el){
+                    if (!el.name || !(el.name in obj.d)) return;
+                    if (el.type === 'radio'){ el.checked = (el.value === obj.d[el.name]); }
+                    else { el.value = obj.d[el.name]; }
+                });
+                showRestoreBanner(obj.t);
+            }
+            function showRestoreBanner(t){
+                var when = t ? new Date(t).toLocaleString() : 'earlier';
+                var bar = document.createElement('div');
+                bar.style.cssText = 'background:#e7f5ff;border:1px solid #74c0fc;color:#1864ab;border-radius:5px;padding:8px 12px;margin-bottom:12px;font-size:13px;';
+                bar.innerHTML = "Restored your unsaved entries from <strong>" + when + "</strong>. <a href='#' style='color:#1864ab;text-decoration:underline;'>Discard them</a>";
+                bar.querySelector('a').addEventListener('click', function (e){ e.preventDefault(); clearLocal(); location.reload(); });
+                form.parentNode.insertBefore(bar, form);
+            }
+            function clearLocal(){ try { localStorage.removeItem(KEY); } catch (e){} }
+            window.mfClearDraft = clearLocal;
+            window.mfWhenReady  = whenReady;
+
+            var saveTimer;
+            form.addEventListener('input',  function (){ clearTimeout(saveTimer); saveTimer = setTimeout(saveLocal, 500); });
+            form.addEventListener('change', saveLocal);
+
+            // If the server just stored a draft (?saved=1) the local copy is redundant; otherwise restore it.
+            if (/[?&]saved=1/.test(location.search)) clearLocal();
+            else restoreLocal();
+
+            // Native "Save Progress" button → wait for compression, then let it submit.
+            form.addEventListener('submit', function (e){
+                if (pending > 0){
+                    e.preventDefault();
+                    var btn = e.submitter;
+                    whenReady(function (){
+                        if (btn && btn.name){ var h = document.createElement('input'); h.type='hidden'; h.name=btn.name; h.value=btn.value; form.appendChild(h); }
+                        clearLocal();
+                        form.submit();
+                    });
+                } else {
+                    clearLocal();
+                }
+            });
+
+            /* ---------- 3. Session keep-alive ---------- */
+            setInterval(function (){
+                try { var x = new XMLHttpRequest(); x.open('GET', 'ping.php', true); x.send(); } catch (e){}
+            }, 4 * 60 * 1000);  // every 4 minutes while the form is open
         })();
         </script>
         <?php endif; ?>

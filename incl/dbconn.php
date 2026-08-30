@@ -38,7 +38,7 @@ if (session_status() === PHP_SESSION_NONE) {
     $https = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
           || (($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https');
     ini_set('session.use_strict_mode', '1');      // reject attacker-supplied session ids
-    ini_set('session.gc_maxlifetime', 604800);    // keep sessions ~7 days server-side
+    ini_set('session.gc_maxlifetime', 2592000);   // keep sessions ~30 days server-side
     session_set_cookie_params([
         'lifetime' => 0,            // browser-session cookie by default (login extends it)
         'path'     => '/',
@@ -117,7 +117,11 @@ function site_picker_field(mysqli $conn, int $selected_id = 0): string {
         $map[$label] = (int) $s['site_id'];
         if ((int) $s['site_id'] === $selected_id) $selected_label = $label;
     }
-    $json = htmlspecialchars(json_encode($map, JSON_UNESCAPED_UNICODE), ENT_QUOTES);
+    // Embed the lookup map straight into the <script> as a JS object literal.
+    // Do NOT htmlspecialchars() this — inside <script> the browser won't decode
+    // entities, so &quot; would be literal text and break the script. json_encode
+    // escapes "/" by default, so a site name can't break out with "</script>".
+    $json = json_encode($map, JSON_UNESCAPED_UNICODE);
 
     $h  = "<input type='text' class='site-picker-input' id='site-picker-input'
                   list='site-picker-list' autocomplete='off'

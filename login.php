@@ -50,10 +50,11 @@ if (isset($_POST['username'])) {
             $_SESSION['user_role'] = $user['role'];
             $_SESSION['client_id'] = $user['client_id'] !== null ? (int) $user['client_id'] : null;
 
-            // "Keep me logged in" → extend the session cookie to 7 days
+            // "Keep me logged in" → extend the session cookie to 30 days so
+            // field techs aren't dropped when the phone sleeps or closes the tab.
             if (isset($_POST['remember']) && $_POST['remember'] === '1') {
                 $p = session_get_cookie_params();
-                setcookie(session_name(), session_id(), time() + 604800, $p['path'], $p['domain'], $p['secure'], true);
+                setcookie(session_name(), session_id(), time() + 2592000, $p['path'], $p['domain'], $p['secure'], true);
             }
 
             header('Location: ' . home_for_role($conn, $user['role'], (int) $user['user_id']));
@@ -98,8 +99,8 @@ if (isset($_POST['username'])) {
                 <input type='password' name='password'>
             </div>
             <div class='form-group' style='display:flex;align-items:center;gap:8px;'>
-                <input type='checkbox' name='remember' value='1' id='remember' style='width:auto;'>
-                <label for='remember' style='margin:0;font-weight:400;color:#555;'>Keep me logged in for 7 days</label>
+                <input type='checkbox' name='remember' value='1' id='remember' checked style='width:auto;'>
+                <label for='remember' style='margin:0;font-weight:400;color:#555;'>Keep me logged in for 30 days</label>
             </div>
             <input type='submit' value='Login' class='btn btn-primary btn-full'>
         </form>
